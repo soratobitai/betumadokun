@@ -1,0 +1,54 @@
+{
+    "manifest_version": 3,
+    "name": "別窓くん",
+    "description": "ニコニコ生放送の番組を別窓で開くためのツールです。",
+    "version": "1.0.0",
+    "author": "サイアミーズフライングフォックス",
+    "options_ui": {
+        "page": "options.html",
+        "open_in_tab": true
+    },
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://live.nicovideo.jp/*"
+            ],
+            "js": [
+                "main.js"
+            ],
+            "css": [
+                "main.css"
+            ]
+        },
+        {
+            "matches": [
+                "https://live.nicovideo.jp/watch/*"
+            ],
+            "run_at": "document_start",
+            "js": [
+                "watch.js"
+            ],
+            "css": [
+                "watch.css"
+            ]
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "images/*.png"
+            ],
+            "matches": [
+                "https://*/*"
+            ]
+        }
+    ],
+    "permissions": [
+        "storage"
+    ]
+}
