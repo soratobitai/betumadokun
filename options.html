@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="options.css">
+    <title>別窓くんの設定</title>
+</head>
+
+<body>
+    <div class="container">
+
+        <h1>別窓くんとは</h1>
+        <p>
+            別窓くんはニコニコ生放送の番組を別窓で開くためのツールです。
+        </p>
+        <p>
+            公式サイト内の番組サムネに別窓で開くためのボタンが追加されます。このボタンを押すと別ウィンドウで開きます。ライブ映像のみの表示となるため、ちょっと覗いてみたい場合や、多窓したい時などに便利です。
+        </p>
+        
+        <h1>オプション</h1>
+
+        <h2>表示モード</h2>
+        
+        <form>
+            <div class="setbox flex">
+                <div class="inputbox flex">
+                    <input type="radio" id="screenmode1" name="screenmode" value="1" checked>
+                    <label for="screenmode1">シンプル</label>
+                </div>
+                <p>
+                    ライブ映像のみを別窓で開きます。コメントや音量調整などの操作はできません。
+                </p>
+            </div>
+        
+            <div class="setbox flex">
+                <div class="inputbox flex">
+                    <input type="radio" id="screenmode2" name="screenmode" value="2">
+                    <label for="screenmode2">フルスクリーン</label>
+                </div>
+                <div>
+                    <p>
+                        ライブ映像のみを別窓で開きます。コメントや音量調節など通常の機能が利用できます。ニコ生の画面設定「フルスクリーンサイズ」の設定で挙動が違います。
+                    </p>
+                    <ul>
+                        <li><b>「ブラウザサイズ」</b>の場合、別窓全体に表示されます。（推奨）</li>
+                        <li><b>「モニタサイズ」</b>の場合、モニタ全体に表示されます。（別窓になりません）</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="setbox flex">
+                <div class="inputbox flex">
+                    <input type="radio" id="screenmode3" name="screenmode" value="3">
+                    <label for="screenmode3">タブ</label>
+                </div>
+                <p>
+                    新しいタブで開きます。
+                </p>
+            </div>
+        </form>
+        
+        <h2>別窓ウィンドウサイズ</h2>
+        
+        <p>
+            別窓ウィンドウのサイズを指定できます。
+        </p>
+        
+        <form>
+            <div class="flex">
+                <label>width</label>
+                <input type="text" name="window_w">
+            </div>
+            <div class="flex">
+                <label>height</label>
+                <input type="text" name="window_h">
+                <div id="setButton">アスペクト比16:9に設定</div>
+            </div>
+        </form>
+
+        
+    </div>
+    
+    <script src="options.js"></script>
+</body>
+
+</html>
