@@ -14,16 +14,56 @@
 
         <h1>別窓くんとは</h1>
         <p>
-            別窓くんはニコニコ生放送の番組を別窓で開くためのツールです。
+            別窓くんは、ニコ生の番組を別窓で開くためのツールです。
         </p>
         <p>
-            公式サイト内の番組サムネに別窓で開くためのボタンが追加されます。このボタンを押すと別ウィンドウで開きます。ライブ映像のみの表示となるため、ちょっと覗いてみたい場合や、多窓したい時などに便利です。
+            ニコニコ生放送 公式サイト内のすべての番組サムネに別窓ボタンが追加されます。このボタンを押すと別ウィンドウが開きライブ映像のみが表示されます。ちょっと覗いてみたい時や、多窓したい時などに便利です。
         </p>
         
         <h1>オプション</h1>
 
-        <h2>表示モード</h2>
+        <h2>別窓モード</h2>
         
+        <form>
+            <div class="setbox flex">
+                <div class="inputbox flex">
+                    <input type="radio" id="windowmode1" name="windowmode" value="1">
+                    <label for="windowmode1">シングル</label>
+                </div>
+                <p>
+                    ウィンドウは常に１つで、新しく開かれた番組は常にこのウィンドウに表示されます。
+                </p>
+            </div>
+        
+            <div class="setbox flex">
+                <div class="inputbox flex">
+                    <input type="radio" id="windowmode2" name="windowmode" value="2" checked>
+                    <label for="windowmode2">多窓</label>
+                </div>
+                <div>
+                    <p>
+                        常に新しいウィンドウで番組が開かれます。
+                    </p>
+                </div>
+            </div>
+        
+            <div class="setbox flex">
+                <div class="inputbox flex">
+                    <input type="radio" id="windowmode3" name="windowmode" value="3">
+                    <label for="windowmode3">タブ</label>
+                </div>
+                <p>
+                    新しいタブで番組が開かれます。（別ウィンドウは開かれません）
+                </p>
+            </div>
+        </form>
+
+        <h2>映像モード</h2>
+        
+        <p>
+            別窓で開かれた番組の表示方法を指定します。（タブ表示の場合は適応されません）
+        </p>
+
         <form>
             <div class="setbox flex">
                 <div class="inputbox flex">
@@ -31,7 +71,7 @@
                     <label for="screenmode1">シンプル</label>
                 </div>
                 <p>
-                    ライブ映像のみを別窓で開きます。コメントや音量調整などの操作はできません。
+                    ライブ映像のみのシンプルな表示。コメントや音量調整などの操作はできません。
                 </p>
             </div>
         
@@ -42,27 +82,18 @@
                 </div>
                 <div>
                     <p>
-                        ライブ映像のみを別窓で開きます。コメントや音量調節など通常の機能が利用できます。ニコ生の画面設定「フルスクリーンサイズ」の設定で挙動が違います。
+                        ライブ映像の上にコメントや音量調節などの通常の機能が表示されます。ニコ生の画面設定「フルスクリーンサイズ」の設定に従います。
                     </p>
                     <ul>
-                        <li><b>「ブラウザサイズ」</b>の場合、別窓全体に表示されます。（推奨）</li>
+                        <li><b>「ブラウザサイズ」</b>の場合、別窓に表示されます。（推奨）</li>
                         <li><b>「モニタサイズ」</b>の場合、モニタ全体に表示されます。（別窓になりません）</li>
                     </ul>
                 </div>
             </div>
 
-            <div class="setbox flex">
-                <div class="inputbox flex">
-                    <input type="radio" id="screenmode3" name="screenmode" value="3">
-                    <label for="screenmode3">タブ</label>
-                </div>
-                <p>
-                    新しいタブで開きます。
-                </p>
-            </div>
         </form>
         
-        <h2>別窓ウィンドウサイズ</h2>
+        <h2>別窓サイズ</h2>
         
         <p>
             別窓ウィンドウのサイズを指定できます。
@@ -79,7 +110,6 @@
                 <div id="setButton">アスペクト比16:9に設定</div>
             </div>
         </form>
-
         
     </div>
     

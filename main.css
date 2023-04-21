@@ -2,11 +2,7 @@
     position:  absolute;
     top: 0;
     right: 0;
-    height: 100%;
     padding: 2px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
 }
 
 .nicolive_link_button {
