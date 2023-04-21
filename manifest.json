@@ -1,9 +1,9 @@
 {
     "manifest_version": 3,
-    "name": "別窓くん",
-    "description": "ニコニコ生放送の番組を別窓で開くためのツールです。",
-    "version": "1.0.0",
-    "author": "サイアミーズフライングフォックス",
+    "name": "別窓くん（ニコ生 多窓サポート）",
+    "description": "ニコニコ生放送の番組を別窓で開くためのツールです。ニコ生監視・多窓をサポートします。",
+    "version": "1.1.0",
+    "author": "MynicoTools",
     "options_ui": {
         "page": "options.html",
         "open_in_tab": true

@@ -1,7 +1,8 @@
 // デフォルト値
+let windowmode = '2';
 let screenmode = '1';
 let window_w = 500;
-let window_h = window_w * (9 / 16);
+let window_h = Math.round((window_w * (9 / 16)) * 10) / 10;
 let addedNodeLength = 0;
 
 window.addEventListener('load', function () {
@@ -18,8 +19,6 @@ window.addEventListener('load', function () {
 
     // MutationObserverを作成
     const observer = new MutationObserver((mutations) => {
-
-        addedNodeLength = 0;
 
         // 追加された要素ごとにループ
         mutations.forEach((mutation) => {
@@ -58,9 +57,18 @@ window.addEventListener('load', function () {
 
 async function insertPopupButton() {
 
+    addedNodeLength = 0;
+
+    // 一旦すべてのボタンを取り除く
+    const nicolive_link_buttons_ = document.getElementsByClassName('nicolive_link_button_wrap');
+    while (nicolive_link_buttons_.length > 0) {
+        nicolive_link_buttons_[0].parentNode.removeChild(nicolive_link_buttons_[0]);
+    }
+
     // 保存されている値を取得
     let options = await chrome.storage.local.get();
     if (options) {
+        windowmode = options['windowmode'] || windowmode;
         screenmode = options['screenmode'] || screenmode;
         window_w = options['window_w'] || window_w;
         window_h = options['window_h'] || window_w * (9 / 16);
@@ -75,24 +83,49 @@ async function insertPopupButton() {
         null, //既に存在するXPathResult
     );
 
-    // 一旦すべてのボタンを取り除く
-    const nicolive_link_buttons_ = document.getElementsByClassName('nicolive_link_button_wrap');
-    while (nicolive_link_buttons_.length > 0) {
-        nicolive_link_buttons_[0].parentNode.removeChild(nicolive_link_buttons_[0]);
-    }
+    // フレームを取得
+    const nicoadFrame = document.evaluate(
+        '//*[contains(@class, \'nicoad-frame\')]',
+        document, // 開始する要素
+        null, // 名前空間の接頭辞
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, // 戻り値の種類
+        null, //既に存在するXPathResult
+    );
 
     // すべての番組に別ウィンドウで開くボタンを設置
     for (let i = 0; i < programCards.snapshotLength; i++) {
 
+        // 挿入先
         let thisElem = programCards.snapshotItem(i);
+        let liveLink = thisElem.querySelector('a');
 
-        let liveLinks = thisElem.querySelectorAll('a');
-        if (liveLinks.length !== 0 &&  liveLinks[0].href) {
-            let liveUrl = liveLinks[0].href;
+        if (liveLink) {
+            // 挿入要素
+            let liveUrl = liveLink.href;
             let linkButton = `<div class="nicolive_link_button_wrap"><div class="nicolive_link_button" liveUrl="${liveUrl}"><img src="${chrome.runtime.getURL('images/link.png')}"></div></div>`;
 
-            liveLinks[0].style.position = 'relative';
-            liveLinks[0].insertAdjacentHTML("beforeend", linkButton);
+            
+
+            // img要素の直後に挿入
+            const imgElement = liveLink.querySelector('img');
+            if (imgElement) {
+                imgElement.insertAdjacentHTML('afterend', linkButton);
+            }
+
+            // フレームがある場合は位置をズラす
+            const nicoadFrames = thisElem.querySelectorAll('[class*="nicoad-frame"]');
+            if (nicoadFrames.length !== 0) {
+                const nicolive_link_button_wrap = liveLink.querySelector('.nicolive_link_button_wrap');
+                if (nicolive_link_button_wrap) {
+                    nicolive_link_button_wrap.style.top = '30px';
+                }
+            }
+
+            // ランキングページの場合　relative
+            const programCardRanks = thisElem.querySelectorAll('[class*="program-card-rank"]');
+            if (programCardRanks.length !== 0) {
+                liveLink.style.position = 'relative';
+            }
         }
     }
 
@@ -108,10 +141,16 @@ async function insertPopupButton() {
 
             let liveUrl = e.target.getAttribute("liveUrl");
 
-            if (screenmode === '1' || screenmode === '2') {
+            // シングル
+            if (windowmode === '1') {
+                window.open(`${liveUrl}?&popup=on&screenmode=${screenmode}`, null, `width=${window_w},height=${window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
+            }
+            // 多窓
+            if ( windowmode === '2') {
                 window.open(`${liveUrl}?&popup=on&screenmode=${screenmode}`, '_blank', `width=${window_w},height=${window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
             }
-            if (screenmode === '3') {
+            // タブ
+            if (windowmode === '3') {
                 window.open(`${liveUrl}`);
             }
 
