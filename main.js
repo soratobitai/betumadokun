@@ -5,67 +5,9 @@ let window_w = 500;
 let window_h = Math.round((window_w * (9 / 16)) * 10) / 10;
 let addedNodeLength = 0;
 
-window.addEventListener('load', function () {
+window.addEventListener('load', async function () {
 
-    insertPopupButton();
-
-
-    /**
-     * 番組要素が追加されたかどうかを監視
-     */
-
-    // 監視対象の要素の親ノード
-    const parentNode = document.body;
-
-    // MutationObserverを作成
-    const observer = new MutationObserver((mutations) => {
-
-        // 追加された要素ごとにループ
-        mutations.forEach((mutation) => {
-            // 追加されたノードが要素の場合のみ実行
-            if (mutation.addedNodes.length && mutation.addedNodes[0].nodeType === Node.ELEMENT_NODE) {
-                // 追加された要素の子孫要素すべてのクラス名を取得
-                const classNames = Array.from(mutation.addedNodes[0].querySelectorAll('*')).reduce((result, node) => {
-                    if (node.className && node.className.trim) {
-                        result.push(node.className.trim());
-                    }
-                    return result;
-                }, []);
-
-                // クラス名に指定したテキストが含まれている場合に限り関数を実行
-                if (classNames.some(className => /program-card_/.test(className))) {
-                    // 追加された要素をカウント
-                    addedNodeLength += 1;
-                }
-            }
-        });
-    });
-
-    // MutationObserverを開始
-    observer.observe(parentNode, { childList: true, subtree: true });
-
-
-    // 定期的に追加された要素がないかチェック
-    setInterval(function () {
-        if (addedNodeLength > 0) {
-            insertPopupButton();
-        }
-    }, 1000);
-
-});
-
-
-async function insertPopupButton() {
-
-    addedNodeLength = 0;
-
-    // 一旦すべてのボタンを取り除く
-    const nicolive_link_buttons_ = document.getElementsByClassName('nicolive_link_button_wrap');
-    while (nicolive_link_buttons_.length > 0) {
-        nicolive_link_buttons_[0].parentNode.removeChild(nicolive_link_buttons_[0]);
-    }
-
-    // 保存されている値を取得
+    // 設定を取得
     let options = await chrome.storage.local.get();
     if (options) {
         windowmode = options['windowmode'] || windowmode;
@@ -82,78 +24,111 @@ async function insertPopupButton() {
         XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, // 戻り値の種類
         null, //既に存在するXPathResult
     );
-
-    // フレームを取得
-    const nicoadFrame = document.evaluate(
-        '//*[contains(@class, \'nicoad-frame\')]',
-        document, // 開始する要素
-        null, // 名前空間の接頭辞
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, // 戻り値の種類
-        null, //既に存在するXPathResult
-    );
-
-    // すべての番組に別ウィンドウで開くボタンを設置
     for (let i = 0; i < programCards.snapshotLength; i++) {
+        insertPopupButton(programCards.snapshotItem(i));
+    }
 
-        // 挿入先
-        let thisElem = programCards.snapshotItem(i);
-        let liveLink = thisElem.querySelector('a');
+    /**
+     * 番組要素が追加されたかどうかを監視
+     */
 
-        if (liveLink) {
-            // 挿入要素
-            let liveUrl = liveLink.href;
-            let linkButton = `<div class="nicolive_link_button_wrap"><div class="nicolive_link_button" liveUrl="${liveUrl}"><img src="${chrome.runtime.getURL('images/link.png')}"></div></div>`;
+    // 監視対象の要素の親ノード
+    const parentNode = document.body;
 
-            
+    // MutationObserverを作成
+    const observer = new MutationObserver(async function (mutations) {
+        
+        mutations.forEach(function (mutation) {
 
-            // img要素の直後に挿入
-            const imgElement = liveLink.querySelector('img');
-            if (imgElement) {
-                imgElement.insertAdjacentHTML('afterend', linkButton);
-            }
+            // 追加された要素を取得する
+            const newNodes = mutation.addedNodes;
 
-            // フレームがある場合は位置をズラす
-            const nicoadFrames = thisElem.querySelectorAll('[class*="nicoad-frame"]');
-            if (nicoadFrames.length !== 0) {
-                const nicolive_link_button_wrap = liveLink.querySelector('.nicolive_link_button_wrap');
-                if (nicolive_link_button_wrap) {
-                    nicolive_link_button_wrap.style.top = '30px';
+            // 新しい要素の中で、指定したクラス名を持つ要素を検索する
+            const programCards = Array.from(newNodes).flatMap(node => {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    return node.querySelectorAll('[class*="program-card_"]');
+                } else {
+                    return [];
+                }
+            });
+
+            // ボタンを追加
+            if (programCards.length > 0) {
+                if (programCards[0].length > 0) {
+                    for (let i = 0; i < programCards[0].length; i++) {
+                        insertPopupButton(programCards[0][i]);
+                    }
                 }
             }
+        });
+    });
 
-            // ランキングページの場合　relative
-            const programCardRanks = thisElem.querySelectorAll('[class*="program-card-rank"]');
-            if (programCardRanks.length !== 0) {
-                liveLink.style.position = 'relative';
-            }
+    // MutationObserverを開始
+    observer.observe(parentNode, { childList: true, subtree: true });
+});
+
+
+async function insertPopupButton(targetElem) {
+
+    // 機能拡張が有効か無効かをチェック
+    try {
+        if (!chrome.runtime.getManifest()) return;
+    } catch (error) {
+        return;
+    }
+
+    // 挿入先
+    let liveLink = targetElem.querySelector('a');
+    if (!liveLink) return;
+
+    // 挿入要素
+    let liveUrl = liveLink.href;
+    let linkButton = `<div class="nicolive_link_button_wrap"><div class="nicolive_link_button" liveUrl="${liveUrl}"><img src="${chrome.runtime.getURL('images/link.png')}"></div></div>`;
+
+    // 対象要素を取得
+    const imgElement = liveLink.querySelector('img');
+    const nicolive_link_button = liveLink.querySelector('.nicolive_link_button');
+    if (!imgElement || nicolive_link_button) return;
+
+    // img要素の直後に挿入
+    imgElement.insertAdjacentHTML('afterend', linkButton);
+
+    // フレームがある場合は位置をズラす
+    const nicoadFrame = targetElem.querySelector('[class*="nicoad-frame"]');
+    if (nicoadFrame) {
+        const nicolive_link_button_wrap = liveLink.querySelector('.nicolive_link_button_wrap');
+        if (nicolive_link_button_wrap) {
+            nicolive_link_button_wrap.style.top = '30px';
         }
+    }
+
+    // ランキングページの場合　relative
+    const programCardRank = targetElem.querySelector('[class*="program-card-rank"]');
+    if (programCardRank) {
+        liveLink.style.position = 'relative';
     }
 
     /**
      * ボタンクリック時イベント
      */
-    const nicolive_link_buttons = document.getElementsByClassName('nicolive_link_button');
+    targetElem.querySelector('.nicolive_link_button').addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
 
-    for (let i = 0; i < nicolive_link_buttons.length; i++) {
-        nicolive_link_buttons[i].addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
+        const liveUrl = e.target.getAttribute("liveUrl");
 
-            let liveUrl = e.target.getAttribute("liveUrl");
+        // シングル
+        if (windowmode === '1') {
+            window.open(`${liveUrl}?&popup=on&screenmode=${screenmode}`, null, `width=${window_w},height=${window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
+        }
+        // 多窓
+        if (windowmode === '2') {
+            window.open(`${liveUrl}?&popup=on&screenmode=${screenmode}`, '_blank', `width=${window_w},height=${window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
+        }
+        // タブ
+        if (windowmode === '3') {
+            window.open(`${liveUrl}`);
+        }
 
-            // シングル
-            if (windowmode === '1') {
-                window.open(`${liveUrl}?&popup=on&screenmode=${screenmode}`, null, `width=${window_w},height=${window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
-            }
-            // 多窓
-            if ( windowmode === '2') {
-                window.open(`${liveUrl}?&popup=on&screenmode=${screenmode}`, '_blank', `width=${window_w},height=${window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
-            }
-            // タブ
-            if (windowmode === '3') {
-                window.open(`${liveUrl}`);
-            }
-
-        }, false);
-    }
+    }, false);
 }
