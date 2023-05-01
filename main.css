@@ -16,8 +16,12 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    opacity: 0;
+    transition: all 0.3s;
 }
-
+.nicolive_link_button_active {
+    opacity: 1 !important;
+}
 .nicolive_link_button img {
     width: 60% !important;
     height: 60% !important;

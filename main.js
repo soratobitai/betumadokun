@@ -85,7 +85,7 @@ async function insertPopupButton(targetElem) {
     let liveUrl = liveLink.href;
     let linkButton = `<div class="nicolive_link_button_wrap"><div class="nicolive_link_button" liveUrl="${liveUrl}"><img src="${chrome.runtime.getURL('images/link.png')}"></div></div>`;
 
-    // 対象要素を取得
+    // img要素がない or ボタンが既にある場合はスルー
     const imgElement = liveLink.querySelector('img');
     const nicolive_link_button = liveLink.querySelector('.nicolive_link_button');
     if (!imgElement || nicolive_link_button) return;
@@ -131,4 +131,12 @@ async function insertPopupButton(targetElem) {
         }
 
     }, false);
+
+    // ホバー時にボタン表示
+    targetElem.addEventListener('mouseover', function (e) {
+        targetElem.querySelector('.nicolive_link_button')?.classList.add('nicolive_link_button_active');
+    });
+    targetElem.addEventListener('mouseleave', function (e) {
+        targetElem.querySelector('.nicolive_link_button')?.classList.remove('nicolive_link_button_active');
+    });
 }
