@@ -41,34 +41,34 @@ function setSimpleScreen() {
 
     const videoElem = document.evaluate(
         '//div[contains(@class, \'_player-display_\')]',
-        document, // 開始する要素
-        null, // 名前空間の接頭辞
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, // 戻り値の種類
-        null, //既に存在するXPathResult
+        document,
+        null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+        null,
     ).snapshotItem(0);
 
     const videoScreenElem = document.evaluate(
         '//div[contains(@class, \'_player-display-screen_\')]',
-        document, // 開始する要素
-        null, // 名前空間の接頭辞
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, // 戻り値の種類
-        null, //既に存在するXPathResult
+        document,
+        null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+        null,
     ).snapshotItem(0);
 
     const videoLayerElem = document.evaluate(
         '//div[contains(@class, \'_video-layer_\')]',
-        document, // 開始する要素
-        null, // 名前空間の接頭辞
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, // 戻り値の種類
-        null, //既に存在するXPathResult
+        document,
+        null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+        null,
     ).snapshotItem(0);
 
     const videoFooterElem = document.evaluate(
         '//div[contains(@class, \'_player-display-footer_\')]',
-        document, // 開始する要素
-        null, // 名前空間の接頭辞
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, // 戻り値の種類
-        null, //既に存在するXPathResult
+        document,
+        null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+        null,
     ).snapshotItem(0);
 
     // フルスクリーン表示
@@ -101,10 +101,10 @@ function setFullScreen() {
 
     const fullScreenButton = document.evaluate(
         '//button[contains(@class, \'fullscreen-button\')]',
-        document, // 開始する要素
-        null, // 名前空間の接頭辞
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, // 戻り値の種類
-        null, //既に存在するXPathResult
+        document,
+        null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+        null,
     ).snapshotItem(0);
 
     fullScreenButton.click();
