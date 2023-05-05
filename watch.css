@@ -3,7 +3,7 @@
     position: fixed !important;
     top: 0;
     left: 0;
-    width: 100%;
+    width: 100% !important;
     height: 100vh;
     max-height: 100vh;
     /* aspect-ratio: 16/9; */
