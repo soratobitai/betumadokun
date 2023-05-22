@@ -1,40 +1,31 @@
+// クエリを取得
+const url = new URL(window.location.href);
+const params = url.searchParams;
+const loading = `<div class="loading"><div class="circle"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>`;
+
 document.addEventListener('DOMContentLoaded', function () {
-
-    // クエリを取得
-    const url = new URL(window.location.href);
-    const params = url.searchParams;
-
-    // ボタンリンクから来ていない場合は、終了
-    if (params.get('popup') !== 'on') return;
-
     // ローディングを挿入
-    const loading = `<div class="loading"><div class="circle"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>`;
-    document.body.insertAdjacentHTML("beforeend", loading);
-
+    if (params.get('popup') === 'on') {
+        document.body.insertAdjacentHTML("beforeend", loading);
+    };
 });
 
 window.addEventListener('load', function () {
 
-    // クエリを取得
-    const url = new URL(window.location.href);
-    const params = url.searchParams;
+    root.style.display = 'block';
 
-    // ボタンリンクから来ていない場合は、終了
-    if (params.get('popup') !== 'on') return;
+    if (params.get('popup') === 'on') {
 
-    // ローディングを終了
-    const loadingElements = document.querySelectorAll('.loading');
-    loadingElements.forEach(element => {
-        element.style.display = 'none';
-    });
+        // ローディングを終了
+        document.querySelector('.loading').style.display = 'none';
 
-    if (params.get('screenmode') === '1') {
-        setSimpleScreen();
-    }
-    if (params.get('screenmode') === '2') {
-        setFullScreen();
-    }
-    
+        if (params.get('screenmode') === '1') {
+            setSimpleScreen();
+        }
+        if (params.get('screenmode') === '2') {
+            setFullScreen();
+        }
+    };
 });
 
 function setSimpleScreen() {
