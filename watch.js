@@ -90,6 +90,16 @@ function setSimpleScreen() {
 
 function setFullScreen() {
 
+    const leoPlayer = document.evaluate(
+        '//div[contains(@class, \'_leo-player_\')]',
+        document,
+        null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+        null,
+    ).snapshotItem(0);
+
+    leoPlayer.classList.add('minSizeNone');
+
     const fullScreenButton = document.evaluate(
         '//button[contains(@class, \'fullscreen-button\')]',
         document,
