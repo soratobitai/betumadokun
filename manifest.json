@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "別窓くん（ニコ生 多窓サポート）",
     "description": "ニコニコ生放送の番組を別窓で開くためのツールです。ニコ生監視・多窓をサポートします。",
-    "version": "1.2.3",
+    "version": "1.2.4",
     "author": "MynicoTools",
     "options_ui": {
         "page": "options.html",

@@ -43,22 +43,17 @@ window.addEventListener('load', async function () {
             // 追加された要素を取得する
             const newNodes = mutation.addedNodes;
 
-            // 新しい要素の中で、指定したクラス名を持つ要素を検索する
-            const programCards = Array.from(newNodes).flatMap(node => {
+            const programCards_ = Array.from(newNodes).reduce((accumulator, node) => {
                 if (node.nodeType === Node.ELEMENT_NODE) {
-                    return node.querySelectorAll('[class*="program-card_"]');
-                } else {
-                    return [];
+                    const matchingElements = Array.from(node.querySelectorAll('[class*="program-card_"]'));
+                    accumulator.push(...matchingElements);
                 }
-            });
+                return accumulator;
+            }, []);
 
             // ボタンを追加
-            if (programCards.length > 0) {
-                if (programCards[0].length > 0) {
-                    for (let i = 0; i < programCards[0].length; i++) {
-                        insertPopupButton(programCards[0][i]);
-                    }
-                }
+            for (let i = 0; i < programCards_.length; i++) {
+                insertPopupButton(programCards_[i]);
             }
         });
     });
