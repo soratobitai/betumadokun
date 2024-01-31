@@ -12,60 +12,35 @@ document.addEventListener('DOMContentLoaded', function () {
 
 window.addEventListener('load', function () {
 
-    root.style.display = 'block';
+    root.style.opacity = '1';
 
-    if (params.get('popup') === 'on') {
-
-        // ローディングを終了
-        document.querySelector('.loading').style.display = 'none';
-
-        if (params.get('screenmode') === '1') {
-            setSimpleScreen();
-        }
-        if (params.get('screenmode') === '2') {
-            setFullScreen();
-        }
+    if (params.get('popup') !== 'on') {
+        document.body.style.overflow = 'auto';
+        return;
     };
+    
+    // ローディングを終了
+    document.querySelector('.loading').style.display = 'none';
+
+    if (params.get('screenmode') === '1') {
+        setSimpleScreen();
+    }
+    if (params.get('screenmode') === '2') {
+        setFullScreen();
+    }
 });
 
 function setSimpleScreen() {
 
-    const videoElem = document.evaluate(
-        '//div[contains(@class, \'_player-display_\')]',
-        document,
-        null,
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-        null,
-    ).snapshotItem(0);
-
-    const videoScreenElem = document.evaluate(
-        '//div[contains(@class, \'_player-display-screen_\')]',
-        document,
-        null,
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-        null,
-    ).snapshotItem(0);
-
-    const videoLayerElem = document.evaluate(
-        '//div[contains(@class, \'_video-layer_\')]',
-        document,
-        null,
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-        null,
-    ).snapshotItem(0);
-
-    const videoFooterElem = document.evaluate(
-        '//div[contains(@class, \'_player-display-footer_\')]',
-        document,
-        null,
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-        null,
-    ).snapshotItem(0);
+    const videoElem = document.querySelector('[class*="_player-display_"]');
+    const videoScreenElem = document.querySelector('[class*="_player-display-screen_"]');
+    const videoFooterElem = document.querySelector('[class*="_player-display-footer_"]');
+    // const videoLayerElem = document.querySelector('[class*="_video-layer_"]');
 
     // フルスクリーン表示
+    document.body.classList.add('overflowHidden');
     videoElem.classList.add('fullScreenView');
     videoFooterElem.classList.add('hiddenView');
-    document.body.classList.add('overflowHidden');
     videoScreenElem.classList.add('minSizeNone');
 
     // クリックで切り替え
@@ -90,23 +65,9 @@ function setSimpleScreen() {
 
 function setFullScreen() {
 
-    const leoPlayer = document.evaluate(
-        '//div[contains(@class, \'_leo-player_\')]',
-        document,
-        null,
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-        null,
-    ).snapshotItem(0);
+    const leoPlayer = document.querySelector('[class*="_leo-player_"]');
+    const fullScreenButton = document.querySelector('[class*="fullscreen-button"]');
 
     leoPlayer.classList.add('minSizeNone');
-
-    const fullScreenButton = document.evaluate(
-        '//button[contains(@class, \'fullscreen-button\')]',
-        document,
-        null,
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-        null,
-    ).snapshotItem(0);
-
     fullScreenButton.click();
 }

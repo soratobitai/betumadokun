@@ -1,5 +1,9 @@
+body {
+    overflow: hidden;
+}
+
 #root {
-    display: none;
+    opacity: 0;
 }
 
 .fullScreenView {
