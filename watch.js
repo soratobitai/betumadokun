@@ -4,6 +4,8 @@ const params = url.searchParams;
 const loading = `<div class="loading"><div class="circle"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>`;
 
 document.addEventListener('DOMContentLoaded', function () {
+    document.body.classList.add('overflowHidden');
+
     // ローディングを挿入
     if (params.get('popup') === 'on') {
         document.body.insertAdjacentHTML("beforeend", loading);
@@ -12,10 +14,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
 window.addEventListener('load', function () {
 
-    root.style.opacity = '1';
+    document.getElementById('root').style.opacity = '1';
 
     if (params.get('popup') !== 'on') {
-        document.body.style.overflow = 'auto';
+        document.body.classList.remove('overflowHidden');
         return;
     };
     
@@ -42,25 +44,6 @@ function setSimpleScreen() {
     videoElem.classList.add('fullScreenView');
     videoFooterElem.classList.add('hiddenView');
     videoScreenElem.classList.add('minSizeNone');
-
-    // クリックで切り替え
-    // videoLayerElem.addEventListener('click', function (e) {
-    //     e.preventDefault();
-    //     e.stopPropagation();
-
-    //     if (videoElem.classList.contains("fullScreenView")) {
-    //         videoElem.classList.remove('fullScreenView');
-    //         videoFooterElem.classList.remove('hiddenView');
-    //         document.body.classList.remove('overflowHidden');
-    //     } else {
-    //         videoElem.classList.add('fullScreenView');
-    //         videoFooterElem.classList.add('hiddenView');
-    //         document.body.classList.add('overflowHidden');
-    //         videoScreenElem.classList.add('minSizeNone');
-    //     }
-    // }, false);
-
-    // videoLayerElem.click();
 }
 
 function setFullScreen() {
