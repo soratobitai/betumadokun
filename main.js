@@ -8,6 +8,10 @@ let options = {};
 const linkIconURL = chrome.runtime.getURL('images/link.png');
 const linkButton = `<div class="nicolive_link_button_wrap"><div class="nicolive_link_button"><img src="${linkIconURL}"></div></div>`;
 
+let openedWindows = [];
+let focusOpenedWindowFlag = true;
+let windowPositionOffset = 30;
+
 window.addEventListener('load', async function () {
 
     // オプションを取得
@@ -66,12 +70,12 @@ async function insertPopupButton(imageElement) {
     imageElement.insertAdjacentHTML('afterend', linkButton);
 
     // フレームがある場合は位置をズラす
-    // if (hasNicoadFrame(imageElement)) {
-    //     const nicolive_link_button_wrap = anchorElement.querySelector('.nicolive_link_button_wrap');
-    //     if (nicolive_link_button_wrap) {
-    //         nicolive_link_button_wrap.style.top = '30px';
-    //     }
-    // }
+    if (hasNicoadFrame(imageElement)) {
+        const nicolive_link_button_wrap = anchorElement.querySelector('.nicolive_link_button_wrap');
+        if (nicolive_link_button_wrap) {
+            nicolive_link_button_wrap.style.top = '30px';
+        }
+    }
 
     // relative
     if (!anchorElement.style.position) {
@@ -87,17 +91,21 @@ async function insertPopupButton(imageElement) {
     addActions(anchorElement);
 }
 
-// function hasNicoadFrame(element) {
+function hasNicoadFrame(element) {
+    while (element) {
+        if (element.classList && Array.from(element.classList).some(className => className.includes('nicoad-frame'))) {
+            return true;
+        }
+        element = element.parentElement;
+    }
+    return false;
+}
 
-//     while (element) {
-//         if (element.classList && Array.from(element.classList).some(className => className.includes('nicoad-frame'))) {
-//             return true;
-//         }
-//         element = element.parentElement;
-//     }
-
-//     return false;
-// }
+function focusOpenedWindows() {
+    openedWindows.forEach(function (win) {
+        win.focus();
+    });
+}
 
 function addActions(anchorElement) {
 
@@ -108,13 +116,29 @@ function addActions(anchorElement) {
         e.preventDefault();
         e.stopPropagation();
 
+        focusOpenedWindows();
+
         // シングル
         if (options.windowmode === '1') {
             window.open(`${liveUrl}?&popup=on&screenmode=${options.screenmode}`, null, `width=${options.window_w},height=${options.window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
         }
         // 多窓
         if (options.windowmode === '2') {
-            window.open(`${liveUrl}?&popup=on&screenmode=${options.screenmode}`, '_blank', `width=${options.window_w},height=${options.window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
+            const position = openedWindows.length * windowPositionOffset;
+            const win = window.open(`${liveUrl}?&popup=on&screenmode=${options.screenmode}`, '_blank', `width=${options.window_w},height=${options.window_h},top=${position},left=${position},resizable=yes,location=no,toolbar=no,menubar=no`);
+            
+            // ウィンドウリストに追加　＆　イベント追加
+            openedWindows.push(win);
+            win.addEventListener('focus', (event) => {
+                if (!focusOpenedWindowFlag) return;
+                focusOpenedWindowFlag = false;
+                setTimeout(() => focusOpenedWindowFlag = true, 500);
+                focusOpenedWindows();
+            });
+            win.addEventListener('unload', (event) => {
+                if (event.currentTarget.location.href === 'about:blank') return;
+                openedWindows = openedWindows.filter(win_ => win_.location.href !== event.currentTarget.location.href); // ウィンドウを閉じたらリストから削除
+            });
         }
         // タブ
         if (options.windowmode === '3') {
@@ -131,6 +155,7 @@ function addActions(anchorElement) {
         nicolive_link_button.classList.remove('nicolive_link_button_active');
     });
 }
+
 
 
 // 設定が変更されたら更新する
