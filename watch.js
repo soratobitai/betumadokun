@@ -1,49 +1,39 @@
 // クエリを取得
 const url = new URL(window.location.href);
 const params = url.searchParams;
-const loading = `<div class="loading"><div class="circle"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>`;
 
 document.addEventListener('DOMContentLoaded', function () {
-    document.body.classList.add('overflowHidden');
-
-    // ローディングを挿入
+    
     if (params.get('popup') === 'on') {
-        document.body.insertAdjacentHTML("beforeend", loading);
-    };
+
+        if (params.get('screenmode') === '1') {
+            setSimpleScreen();
+        }
+
+        if (params.get('screenmode') === '2') {
+            setFullScreen();
+        }
+    }
+
+    document.getElementById('root').style.opacity = '1';
 });
 
 window.addEventListener('load', function () {
-
-    document.getElementById('root').style.opacity = '1';
-
-    if (params.get('popup') !== 'on') {
-        document.body.classList.remove('overflowHidden');
-        return;
-    };
-    
-    // ローディングを終了
-    document.querySelector('.loading').style.display = 'none';
-
-    if (params.get('screenmode') === '1') {
-        setSimpleScreen();
-    }
-    if (params.get('screenmode') === '2') {
-        setFullScreen();
-    }
+    //
 });
 
 function setSimpleScreen() {
 
-    const videoElem = document.querySelector('[class*="_player-display_"]');
-    const videoScreenElem = document.querySelector('[class*="_player-display-screen_"]');
-    const videoFooterElem = document.querySelector('[class*="_player-display-footer_"]');
-    // const videoLayerElem = document.querySelector('[class*="_video-layer_"]');
+    const playerDisplay = document.querySelector('[class*="_player-display_"]');
+    const playerDisplayScreen = document.querySelector('[class*="_player-display-screen_"]');
+    const playerDisplayFooter = document.querySelector('[class*="_player-display-footer_"]');
+    const commonHeader = document.querySelector('[class*="_common-header_"]');
 
-    // フルスクリーン表示
     document.body.classList.add('overflowHidden');
-    videoElem.classList.add('fullScreenView');
-    videoFooterElem.classList.add('hiddenView');
-    videoScreenElem.classList.add('minSizeNone');
+    playerDisplay.classList.add('fullScreenView');
+    playerDisplayScreen.classList.add('minSizeNone');
+    playerDisplayFooter.classList.add('hiddenView');
+    commonHeader.classList.add('hiddenView');
 }
 
 function setFullScreen() {

@@ -1,3 +1,6 @@
+body {
+    background-color: black;
+}
 #root {
     opacity: 0;
 }
@@ -26,83 +29,4 @@
     max-height: none !important;
     min-width: auto !important;
     min-height: auto !important;
-}
-
-.loading {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100vh;
-    background-color: black;
-    pointer-events: none;
-    transition: opacity .2s ease-in-out;
-
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-.circle {
-    margin: -50px;
-    border-radius: 50%;
-    width: 100px;
-    height: 100px;
-    animation: Load 1.2s ease infinite normal;
-}
-
-.dot {
-    position: absolute;
-    margin: -5px;
-    top: 50%;
-    left: 50%;
-    border-radius: 50%;
-    width: 10px;
-    height: 10px;
-    background: rgba(255, 255, 255, 0.3);
-    animation: Attack .6s ease infinite alternate;
-}
-
-.dot:nth-child(1) {
-    margin-top: calc(-30px - 5px);
-}
-
-.dot:nth-child(2) {
-    margin-top: calc(-9.27px - 5px);
-    margin-left: calc(28.53px - 5px);
-}
-
-.dot:nth-child(3) {
-    margin-top: calc(-9.27px - 5px);
-    margin-left: calc(-28.53px - 5px);
-}
-
-.dot:nth-child(4) {
-    margin-top: calc(24.27px - 5px);
-    margin-left: calc(17.63px - 5px);
-}
-
-.dot:nth-child(5) {
-    margin-top: calc(24.27px - 5px);
-    margin-left: calc(-17.63px - 5px);
-}
-
-@keyframes Load {
-    0% {
-        transform: rotate(0deg);
-    }
-
-    100% {
-        transform: rotate(360deg);
-    }
-}
-
-@keyframes Attack {
-    0% {
-        transform: scale(1, 1);
-    }
-
-    100% {
-        transform: scale(1.4, 1.4);
-    }
 }
