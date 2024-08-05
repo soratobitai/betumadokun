@@ -13,8 +13,6 @@ let focusOpenedWindowFlag = true;
 let windowPositionOffset = 30;
 
 window.addEventListener('load', async function () {
-
-    return;
     
     // オプションを取得
     options = await getOptions();
