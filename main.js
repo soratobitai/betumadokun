@@ -22,9 +22,7 @@ window.addEventListener('load', async function () {
 
     // 別窓くんボタンを追加
     document.querySelectorAll('img').forEach(function (imageElement) {
-        if (isTargetImage(imageElement)) {
-            insertPopupButton(imageElement);
-        }
+        insertPopupButton(imageElement);
     });
 
     /**
@@ -36,9 +34,7 @@ window.addEventListener('load', async function () {
             mutation.addedNodes.forEach(function (node) {
                 if (node.nodeType !== Node.ELEMENT_NODE) return;
                 node.querySelectorAll('img').forEach(function (imageElement) {
-                    if (isTargetImage(imageElement)) {
-                        insertPopupButton(imageElement);
-                    }
+                    insertPopupButton(imageElement);
                 });
             });
         });
@@ -49,17 +45,23 @@ window.addEventListener('load', async function () {
 });
 
 function isTargetImage(imageElement) {
-
-    // 番組リンクが貼られている
     const parentNode = imageElement.parentNode;
-    if (parentNode.tagName.toLowerCase() !== 'a') return false;
-    if (!parentNode.href) return false;
-    if (parentNode.href.indexOf('live.nicovideo.jp/watch/lv') === -1) return false;
+
+    // リンクが貼られているか
+    if (parentNode.tagName.toLowerCase() !== 'a' || !parentNode.href) return false
+
+    // ニコ生の番組へのリンクかどうか
+    const allowedURLs = [
+        'live.nicovideo.jp/watch/lv',
+        // 'api.nicoad.nicovideo.jp/v1/nicoad/' // 広告リンクは視聴ページへ転送される（CORS制限あり）仕組みなので対応不可
+    ];
+    if (!allowedURLs.some(url => parentNode.href.includes(url))) return false
 
     return true;
 }
 
 async function insertPopupButton(imageElement) {
+    if (!isTargetImage(imageElement)) return;
 
     const anchorElement = imageElement.parentNode;
 
@@ -82,10 +84,6 @@ async function insertPopupButton(imageElement) {
         anchorElement.style.position = 'relative';
         anchorElement.style.overflow = 'visible';
     }
-    // const programCardRank = anchorElement.querySelector('[class*="program-card-rank"]');
-    // if (programCardRank) {
-    //     anchorElement.style.position = 'relative';
-    // }
 
     // クリックイベントなど追加
     addActions(anchorElement);
