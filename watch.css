@@ -12,7 +12,6 @@ body {
     width: 100% !important;
     height: 100vh;
     max-height: 100vh;
-    /* aspect-ratio: 16/9; */
     z-index: 9999999;
 }
 
@@ -29,4 +28,13 @@ body {
     max-height: none !important;
     min-width: auto !important;
     min-height: auto !important;
+}
+
+.clonedMuteBtnWrap {
+    position: fixed !important;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 30px;
+    padding: 5px;
 }

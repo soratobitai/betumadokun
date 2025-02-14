@@ -48,14 +48,14 @@ function isTargetImage(imageElement) {
     const parentNode = imageElement.parentNode;
 
     // リンクが貼られているか
-    if (parentNode.tagName.toLowerCase() !== 'a' || !parentNode.href) return false
+    if (parentNode.tagName.toLowerCase() !== 'a' || !parentNode.href) return false;
 
     // ニコ生の番組へのリンクかどうか
     const allowedURLs = [
         'live.nicovideo.jp/watch/lv',
         // 'api.nicoad.nicovideo.jp/v1/nicoad/' // 広告リンクは視聴ページへ転送される（CORS制限あり）仕組みなので対応不可
     ];
-    if (!allowedURLs.some(url => parentNode.href.includes(url))) return false
+    if (!allowedURLs.some(url => parentNode.href.includes(url))) return false;
 
     return true;
 }
