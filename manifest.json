@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "別窓くん（ニコ生 多窓サポート）",
     "description": "ニコニコ生放送の番組を別窓で開くためのChrome機能拡張です。",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "author": "MynicoTools",
     "options_ui": {
         "page": "options.html",
@@ -23,7 +23,8 @@
             ],
             "css": [
                 "main.css"
-            ]
+            ],
+            "run_at": "document_start"
         },
         {
             "matches": [

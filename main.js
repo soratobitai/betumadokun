@@ -12,8 +12,21 @@ let openedWindows = [];
 let focusOpenedWindowFlag = true;
 let windowPositionOffset = 30;
 
-window.addEventListener('load', async function () {
-    
+/**
+ * ブラウザがアイドル状態になったときに処理を実行する
+ * 古いブラウザ向けに fallback として setTimeout を使用
+ * @param {Function} callback - 実行したい処理
+ * @param {number} fallbackDelay - fallback 時の遅延ミリ秒（デフォルト2000ms）
+ */
+function runWhenIdle(callback, fallbackDelay = 2000) {
+    if ('requestIdleCallback' in window) {
+        requestIdleCallback(callback, { timeout: fallbackDelay });
+    } else {
+        setTimeout(callback, fallbackDelay);
+    }
+}
+
+runWhenIdle(async () => {
     // オプションを取得
     options = await getOptions();
 
@@ -42,7 +55,8 @@ window.addEventListener('load', async function () {
 
     // MutationObserverを開始
     observer.observe(parentNode, { childList: true, subtree: true });
-});
+})
+
 
 function isTargetImage(imageElement) {
     const parentNode = imageElement.parentNode;
