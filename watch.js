@@ -174,7 +174,9 @@ function setSimpleScreen() {
     commonHeader.classList.add('hiddenView');
 
     // 音量設定機能追加
-    volumeSetting(playerDisplay);
+    setTimeout(() => {
+        volumeSetting(playerDisplay);
+    }, 1000);
 }
 
 function setFullScreen() {
