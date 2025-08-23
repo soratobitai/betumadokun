@@ -30,31 +30,29 @@ runWhenIdle(async () => {
     // オプションを取得
     options = await getOptions();
 
-    // 監視対象の要素の親ノード
-    const parentNode = document.body;
+    // マウスオーバー時に対象判定し、未作成ならボタンを作成して表示
+    document.addEventListener('mouseover', function (event) {
+        const target = event.target;
+        if (!target || !(target instanceof Element)) return;
 
-    // 別窓くんボタンを追加
-    document.querySelectorAll('img').forEach(function (imageElement) {
-        insertPopupButton(imageElement);
+        const imageElement = target.closest && target.closest('img');
+        if (!imageElement) return;
+
+        if (!isTargetImage(imageElement)) return;
+
+        const anchorElement = imageElement.parentNode;
+
+        // 初回のみ作成
+        if (!anchorElement.querySelector('.nicolive_link_button_wrap')) {
+            insertPopupButton(imageElement);
+        }
+
+        // 既存/新規問わず、現在のホバーで確実に表示
+        const nicolive_link_button = anchorElement.querySelector('.nicolive_link_button');
+        if (nicolive_link_button) {
+            nicolive_link_button.classList.add('nicolive_link_button_active');
+        }
     });
-
-    /**
-     * 番組リンクが挿入されたら別窓くんボタンを追加
-     */
-    // MutationObserverを作成
-    const observer = new MutationObserver(function (mutations) {
-        mutations.forEach(function (mutation) {
-            mutation.addedNodes.forEach(function (node) {
-                if (node.nodeType !== Node.ELEMENT_NODE) return;
-                node.querySelectorAll('img').forEach(function (imageElement) {
-                    insertPopupButton(imageElement);
-                });
-            });
-        });
-    });
-
-    // MutationObserverを開始
-    observer.observe(parentNode, { childList: true, subtree: true });
 })
 
 
