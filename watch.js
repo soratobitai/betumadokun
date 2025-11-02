@@ -13,6 +13,10 @@ function showLoadingScreen() {
     loadingScreen.appendChild(spinner);
     document.body.appendChild(loadingScreen);
     
+    // スクロールバーを非表示にする
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    
     return loadingScreen;
 }
 
@@ -25,6 +29,13 @@ function hideLoadingScreen() {
         loadingScreen.style.opacity = '0';
         setTimeout(() => {
             loadingScreen.remove();
+            // スクロールバーの設定を元に戻す
+            // setSimpleScreenでoverflowHiddenクラスが追加される場合は、そのクラスで制御される
+            // そうでない場合は、overflowをリセット
+            if (!document.body.classList.contains('overflowHidden')) {
+                document.documentElement.style.overflow = '';
+                document.body.style.overflow = '';
+            }
         }, 300);
     }
 }

@@ -3,6 +3,7 @@ let defaultOptions = {
     screenmode: '1',
     window_w: 500,
     window_h: 281.3,
+    alwaysOnTop: false,
 };
 let options = {};
 const linkIconURL = chrome.runtime.getURL('images/link.png');
@@ -12,6 +13,8 @@ const settingsButton = `<div class="nicolive_settings_button_wrap"><div class="n
 let openedWindows = [];
 let focusOpenedWindowFlag = true;
 let windowPositionOffset = 30;
+let lastActiveWindow = null; // 最後にアクティブだった別窓を記録
+let windowFocusOrder = new Map(); // 各ウィンドウのフォーカス順序を記録（タイムスタンプ + 開いた順序）
 
 /**
  * ブラウザがアイドル状態になったときに処理を実行する
@@ -120,10 +123,75 @@ function hasNicoadFrame(element) {
     return false;
 }
 
+let focusOrderCounter = 0; // フォーカス順序のカウンター
+
 function focusOpenedWindows() {
+    // 「常に手前に表示」が有効な場合
+    if (options.alwaysOnTop) {
+        // 重なり順を維持するため、フォーカス順序の古い順（下から順）にフォーカス
+        const sortedWindows = openedWindows
+            .filter(win => {
+                try {
+                    return !win.closed;
+                } catch (e) {
+                    return false;
+                }
+            })
+            .sort((a, b) => {
+                const orderA = windowFocusOrder.get(a) || 0;
+                const orderB = windowFocusOrder.get(b) || 0;
+                return orderA - orderB; // 古い順（小さい値が先）
+            });
+        
+        // 古い順にフォーカス = 最後にフォーカスされたものが一番上に来る
+        sortedWindows.forEach(function (win) {
+            try {
+                win.focus();
+            } catch (e) {
+                // エラーを無視
+            }
+        });
+        return;
+    }
+    
+    // 通常の動作（多窓機能）: すべての別窓を順番にフォーカス
     openedWindows.forEach(function (win) {
         win.focus();
     });
+}
+
+// 別窓からアクセスできるようにグローバルに公開
+window.focusOpenedWindows = focusOpenedWindows;
+
+// 常に手前に表示する設定
+let alwaysOnTopEventHandlers = [];
+
+function startAlwaysOnTopMonitoring() {
+    if (alwaysOnTopEventHandlers.length > 0) return; // 既に開始済み
+    
+    // イベントハンドラ - 既存の focusOpenedWindows を利用
+    const handler = () => {
+        // スクリプトによるフォーカスとして記録されないようにフラグを設定
+        focusOpenedWindowFlag = false;
+        focusOpenedWindows();
+        // 少し遅延させてからフラグを戻す
+        setTimeout(() => focusOpenedWindowFlag = true, 100);
+    };
+    
+    // 監視するイベント
+    const events = ['mousedown', 'click', 'focus'];
+    
+    events.forEach(eventType => {
+        window.addEventListener(eventType, handler, true);
+        alwaysOnTopEventHandlers.push({ type: eventType, handler });
+    });
+}
+
+function stopAlwaysOnTopMonitoring() {
+    alwaysOnTopEventHandlers.forEach(({ type, handler }) => {
+        window.removeEventListener(type, handler, true);
+    });
+    alwaysOnTopEventHandlers = [];
 }
 
 function addActions(anchorElement) {
@@ -140,7 +208,51 @@ function addActions(anchorElement) {
 
         // シングル
         if (options.windowmode === '1') {
-            window.open(`${liveUrl}?&popup=on&screenmode=${options.screenmode}`, null, `width=${options.window_w},height=${options.window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
+            const win = window.open(`${liveUrl}?&popup=on&screenmode=${options.screenmode}`, null, `width=${options.window_w},height=${options.window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
+            
+            // 閉じられたウィンドウを配列から削除
+            openedWindows = openedWindows.filter(w => {
+                try {
+                    return !w.closed;
+                } catch (e) {
+                    return false;
+                }
+            });
+            
+            if (win) {
+                openedWindows.push(win);
+                lastActiveWindow = win; // 開いた直後は最後のアクティブウィンドウとして記録
+                windowFocusOrder.set(win, ++focusOrderCounter); // フォーカス順序を記録
+                win.addEventListener('focus', (event) => {
+                    if (!focusOpenedWindowFlag) return;
+                    focusOpenedWindowFlag = false;
+                    setTimeout(() => focusOpenedWindowFlag = true, 500);
+                    
+                    // ユーザーの操作によるフォーカスのみ記録
+                    lastActiveWindow = win;
+                    windowFocusOrder.set(win, ++focusOrderCounter); // フォーカス順序を更新
+                    
+                    // 「常に手前に表示」が有効な場合のみ、他の別窓も一緒に前面に
+                    if (options.alwaysOnTop) {
+                        focusOpenedWindows();
+                    }
+                });
+                win.addEventListener('unload', (event) => {
+                    if (event.currentTarget.location.href === 'about:blank') return;
+                    openedWindows = openedWindows.filter(win_ => win_ !== win);
+                    windowFocusOrder.delete(win); // フォーカス順序を削除
+                    
+                    // 閉じられたウィンドウが最後のアクティブウィンドウだった場合
+                    if (lastActiveWindow === win) {
+                        lastActiveWindow = openedWindows.length > 0 ? openedWindows[openedWindows.length - 1] : null;
+                    }
+                    
+                    // すべてのウィンドウが閉じられたら監視を停止
+                    if (openedWindows.length === 0 && options.alwaysOnTop) {
+                        stopAlwaysOnTopMonitoring();
+                    }
+                });
+            }
         }
         // 多窓
         if (options.windowmode === '2') {
@@ -149,20 +261,46 @@ function addActions(anchorElement) {
             
             // ウィンドウリストに追加　＆　イベント追加
             openedWindows.push(win);
+            lastActiveWindow = win; // 開いた直後は最後のアクティブウィンドウとして記録
+            windowFocusOrder.set(win, ++focusOrderCounter); // フォーカス順序を記録
             win.addEventListener('focus', (event) => {
                 if (!focusOpenedWindowFlag) return;
                 focusOpenedWindowFlag = false;
                 setTimeout(() => focusOpenedWindowFlag = true, 500);
-                focusOpenedWindows();
+                
+                // ユーザーの操作によるフォーカスのみ記録
+                lastActiveWindow = win;
+                windowFocusOrder.set(win, ++focusOrderCounter); // フォーカス順序を更新
+                
+                // 「常に手前に表示」が有効な場合のみ、他の別窓も一緒に前面に
+                if (options.alwaysOnTop) {
+                    focusOpenedWindows();
+                }
             });
             win.addEventListener('unload', (event) => {
                 if (event.currentTarget.location.href === 'about:blank') return;
                 openedWindows = openedWindows.filter(win_ => win_.location.href !== event.currentTarget.location.href); // ウィンドウを閉じたらリストから削除
+                windowFocusOrder.delete(win); // フォーカス順序を削除
+                
+                // 閉じられたウィンドウが最後のアクティブウィンドウだった場合
+                if (lastActiveWindow === win) {
+                    lastActiveWindow = openedWindows.length > 0 ? openedWindows[openedWindows.length - 1] : null;
+                }
+                
+                // すべてのウィンドウが閉じられたら監視を停止
+                if (openedWindows.length === 0 && options.alwaysOnTop) {
+                    stopAlwaysOnTopMonitoring();
+                }
             });
         }
         // タブ
         if (options.windowmode === '3') {
             window.open(`${liveUrl}`);
+        }
+        
+        // alwaysOnTopが有効な場合、モニタリングを開始
+        if (options.alwaysOnTop && options.windowmode !== '3') {
+            startAlwaysOnTopMonitoring();
         }
 
     }, false);
@@ -193,6 +331,15 @@ chrome.storage.onChanged.addListener(function (changes) {
     if (changes.screenmode) options.screenmode = changes.screenmode.newValue;
     if (changes.window_w) options.window_w = changes.window_w.newValue;
     if (changes.window_h) options.window_h = changes.window_h.newValue;
+    if (changes.alwaysOnTop) {
+        options.alwaysOnTop = changes.alwaysOnTop.newValue;
+        // オプションの変更に応じてモニタリングを開始/停止
+        if (options.alwaysOnTop && openedWindows.length > 0) {
+            startAlwaysOnTopMonitoring();
+        } else if (!options.alwaysOnTop) {
+            stopAlwaysOnTopMonitoring();
+        }
+    }
 });
 
 // オプションを取得
@@ -205,6 +352,7 @@ const getOptions = async () => {
     if (options_.screenmode === undefined) options_.screenmode = defaultOptions.screenmode;
     if (options_.window_w === undefined) options_.window_w = defaultOptions.window_w;
     if (options_.window_h === undefined) options_.window_h = defaultOptions.window_h;
+    if (options_.alwaysOnTop === undefined) options_.alwaysOnTop = defaultOptions.alwaysOnTop;
 
     return options_;
 };
@@ -290,6 +438,17 @@ function openSettingsModal() {
                                 </div>
                             </div>
                         </div>
+
+                        <div class="nicolive_modal_section">
+                            <h3>表示オプション</h3>
+                            <div class="nicolive_checkbox_item">
+                                <label>
+                                    <input type="checkbox" name="alwaysOnTop">
+                                    <span class="nicolive_label_text">別窓を常に手前に表示</span>
+                                </label>
+                                <p class="nicolive_option_desc">元のページをクリックしても、別窓が常に前面に表示されます。</p>
+                            </div>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -320,6 +479,9 @@ function initializeModalValues() {
     // 別窓サイズ
     document.querySelector('input[name="window_w"]').value = options.window_w;
     document.querySelector('input[name="window_h"]').value = options.window_h;
+
+    // 表示オプション
+    document.querySelector('input[name="alwaysOnTop"]').checked = options.alwaysOnTop;
 }
 
 // モーダルのイベントリスナーを追加
@@ -377,6 +539,7 @@ async function saveModalOptions() {
     options.screenmode = form.querySelector('input[name="screenmode"]:checked').value;
     options.window_w = form.querySelector('input[name="window_w"]').value;
     options.window_h = form.querySelector('input[name="window_h"]').value;
+    options.alwaysOnTop = form.querySelector('input[name="alwaysOnTop"]').checked;
 
     await chrome.storage.local.set(options);
 }
