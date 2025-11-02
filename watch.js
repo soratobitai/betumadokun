@@ -2,11 +2,67 @@
 const url = new URL(window.location.href);
 const params = url.searchParams;
 
+// ローディング画面を表示する関数
+function showLoadingScreen() {
+    const loadingScreen = document.createElement('div');
+    loadingScreen.id = 'customLoadingScreen';
+    
+    const spinner = document.createElement('div');
+    spinner.className = 'loadingSpinner';
+    
+    loadingScreen.appendChild(spinner);
+    document.body.appendChild(loadingScreen);
+    
+    return loadingScreen;
+}
+
+// ローディング画面を非表示にする関数
+function hideLoadingScreen() {
+    const loadingScreen = document.getElementById('customLoadingScreen');
+    if (loadingScreen) {
+        loadingScreen.style.opacity = '1';
+        loadingScreen.style.transition = 'opacity 0.3s ease-out';
+        loadingScreen.style.opacity = '0';
+        setTimeout(() => {
+            loadingScreen.remove();
+        }, 300);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     
     if (params.get('popup') === 'on') {
-        if (params.get('screenmode') === '1') setSimpleScreen();
-        if (params.get('screenmode') === '2') setFullScreen();
+        // ローディング画面を表示
+        showLoadingScreen();
+        
+        // ページがアイドル状態になってから実行（ブラウザがビジーでなくなるのを待つ）
+        const executeWhenIdle = (callback) => {
+            if ('requestIdleCallback' in window) {
+                // requestIdleCallback をサポートしている場合
+                requestIdleCallback(() => {
+                    // さらにもう一度 requestIdleCallback を呼ぶことで、より確実にアイドル状態を待つ
+                    requestIdleCallback(() => {
+                        callback();
+                        // スタイル適用後にローディングを非表示
+                        hideLoadingScreen();
+                    }, { timeout: 2000 });
+                }, { timeout: 2000 });
+            } else {
+                // サポートしていない場合は setTimeout でフォールバック
+                setTimeout(() => {
+                    callback();
+                    // スタイル適用後にローディングを非表示
+                    hideLoadingScreen();
+                }, 1000);
+            }
+        };
+
+        if (params.get('screenmode') === '1') {
+            executeWhenIdle(setSimpleScreen);
+        }
+        if (params.get('screenmode') === '2') {
+            executeWhenIdle(setFullScreen);
+        }
     }
 
     document.getElementById('root').style.opacity = '1';
