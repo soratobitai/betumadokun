@@ -408,7 +408,7 @@ function openSettingsModal() {
                                     <input type="radio" name="screenmode" value="1">
                                     <span class="nicolive_label_text">シンプル</span>
                                 </label>
-                                <p class="nicolive_option_desc">ライブ映像のみのシンプルな表示。コメントや音量調整などの操作はできません。</p>
+                                <p class="nicolive_option_desc">ライブ映像のみのシンプルな表示。コメントはできません。</p>
                             </div>
                             <div class="nicolive_option_item">
                                 <label>
@@ -416,7 +416,7 @@ function openSettingsModal() {
                                     <span class="nicolive_label_text">多機能</span>
                                 </label>
                                 <p class="nicolive_option_desc">
-                                    コメントや音量調節など（ニコ生の標準機能）が利用できます。<br>
+                                    コメントやニコ生の標準機能が利用できます。<br>
                                     <strong>ニコ生の画面設定「フルスクリーンサイズ」を「ブラウザサイズ」に設定してください。</strong>
                                     「モニタサイズ」設定の場合は別窓になりません。
                                 </p>
