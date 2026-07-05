@@ -153,6 +153,38 @@ function volumeSetting(playerDisplay) {
     // ホバーアクションを追加
     addHoverAction(playerDisplay, volumeSettingEl);
 }
+
+// 映像のみの再読み込みボタン（ニコ生の「映像・音声が止まった際に押して下さい」ボタン）を
+// 音量ボタンと同様に playerDisplay 配下へ移設し、右下に表示する
+/** @param {HTMLElement} playerDisplay */
+function reloadSetting(playerDisplay) {
+    if (!playerDisplay) return;
+    // 素の class="reload-button"（録画リスト更新）とは別。CSSモジュール名 ___reload-button___ を狙う
+    const reloadBtn = /** @type {HTMLElement} */ (document.querySelector('[class*="_reload-button_"]'));
+    if (!reloadBtn) return;
+
+    // オリジナルを playerDisplay 配下に移設（Reactのイベント委譲範囲内を維持）
+    playerDisplay.appendChild(reloadBtn);
+    reloadBtn.classList.add('clonedReloadBtnWrap');
+
+    // 最前面に配置
+    reloadBtn.style.zIndex = '99999999';
+
+    // ホバーアクションを追加
+    addHoverAction(playerDisplay, reloadBtn);
+}
+
+// コントロール（音量・リロード）を白い映像でも見やすくするため、
+// 画面下部に「下→上」の半透明黒グラデーション（スクリム）を敷く（ホバー時のみ表示）
+/** @param {HTMLElement} playerDisplay */
+function addControlScrim(playerDisplay) {
+    if (!playerDisplay) return;
+    const scrim = document.createElement('div');
+    scrim.className = 'clonedControlScrim';
+    playerDisplay.appendChild(scrim);
+    addHoverAction(playerDisplay, scrim);
+}
+
 async function setSimpleScreen() {
 
     // プレイヤー本体が現れるまで待つ（未描画のまま変形して例外になるのを防ぐ）
@@ -169,9 +201,11 @@ async function setSimpleScreen() {
     playerDisplayFooter?.classList.add('hiddenView');
     commonHeader?.classList.add('hiddenView');
 
-    // 音量設定機能追加
+    // スクリム・音量設定・リロードボタンを追加
     setTimeout(() => {
+        addControlScrim(playerDisplay);
         volumeSetting(playerDisplay);
+        reloadSetting(playerDisplay);
     }, 1000);
 }
 

@@ -39,6 +39,26 @@ body {
     padding: 5px;
 }
 
+/* 映像のみ再読み込みボタン（右下・右と下に少し余白） */
+.clonedReloadBtnWrap {
+    position: fixed !important;
+    bottom: 8px;
+    right: 8px;
+    padding: 5px;
+}
+
+/* コントロール視認性向上のスクリム（下→上の半透明黒グラデ。ホバー時のみ表示） */
+.clonedControlScrim {
+    position: fixed !important;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 120px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0) 100%);
+    pointer-events: none;
+    z-index: 99999998;
+}
+
 /* ローディング画面 */
 #customLoadingScreen {
     position: fixed;
