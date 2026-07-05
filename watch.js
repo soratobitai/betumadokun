@@ -45,26 +45,22 @@ document.addEventListener('DOMContentLoaded', function () {
     if (params.get('popup') === 'on') {
         // ローディング画面を表示
         showLoadingScreen();
-        
+
         // ページがアイドル状態になってから実行（ブラウザがビジーでなくなるのを待つ）
+        // callback は Promise を返す場合があり、完了（成否問わず）後に必ずローディングを閉じる
         const executeWhenIdle = (callback) => {
+            const run = () => {
+                Promise.resolve()
+                    .then(callback)
+                    .catch((e) => console.error('別窓くん:', e))
+                    .finally(hideLoadingScreen);
+            };
             if ('requestIdleCallback' in window) {
-                // requestIdleCallback をサポートしている場合
-                requestIdleCallback(() => {
-                    // さらにもう一度 requestIdleCallback を呼ぶことで、より確実にアイドル状態を待つ
-                    requestIdleCallback(() => {
-                        callback();
-                        // スタイル適用後にローディングを非表示
-                        hideLoadingScreen();
-                    }, { timeout: 2000 });
-                }, { timeout: 2000 });
+                // さらにもう一度 requestIdleCallback を呼ぶことで、より確実にアイドル状態を待つ
+                requestIdleCallback(() => requestIdleCallback(run, { timeout: 2000 }), { timeout: 2000 });
             } else {
                 // サポートしていない場合は setTimeout でフォールバック
-                setTimeout(() => {
-                    callback();
-                    // スタイル適用後にローディングを非表示
-                    hideLoadingScreen();
-                }, 1000);
+                setTimeout(run, 1000);
             }
         };
 
@@ -76,8 +72,29 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    document.getElementById('root').style.opacity = '1';
+    const root = document.getElementById('root');
+    if (root) root.style.opacity = '1';
 });
+
+// 指定セレクタの要素が現れるまで待つ（最大 retries 回・interval ミリ秒間隔でポーリング）
+// ニコ生本体（React）の描画が遅れて要素が未生成のケースに対応する。見つからなければ null を返す
+function waitForElement(selector, { retries = 20, interval = 250 } = {}) {
+    return new Promise((resolve) => {
+        const existing = document.querySelector(selector);
+        if (existing) {
+            resolve(existing);
+            return;
+        }
+        let count = 0;
+        const timer = setInterval(() => {
+            const el = document.querySelector(selector);
+            if (el || ++count >= retries) {
+                clearInterval(timer);
+                resolve(el);
+            }
+        }, interval);
+    });
+}
 
 function addHoverAction(playerDisplay, targetElement) {
 
@@ -86,34 +103,31 @@ function addHoverAction(playerDisplay, targetElement) {
     // ウィンドウ内全体にホバーした時に表示
     playerDisplay.addEventListener('mouseenter', function () {
         targetElement.style.display = 'flex';
-        console.log('hover!');
     });
 
     // ウィンドウからマウスが離れたときに非表示
     playerDisplay.addEventListener('mouseleave', function () {
         if (!targetElement.matches(':hover')) {
             targetElement.style.display = 'none';
-            console.log('none!');
         }
     });
 
     // targetElementにホバーしたときに非表示にしない
     targetElement.addEventListener('mouseenter', function () {
         targetElement.style.display = 'flex';
-        console.log('hover!2');
     });
 
     // targetElementからマウスが離れたときに非表示
     targetElement.addEventListener('mouseleave', function () {
         if (!playerDisplay.matches(':hover')) {
             targetElement.style.display = 'none';
-            console.log('none!2');
         }
     });
 }
 
 // クローンや相互同期のロジックは撤去
 function volumeSetting(playerDisplay) {
+    if (!playerDisplay) return;
     const volumeSettingEl = document.querySelector('[class*="_volume-setting_"]');
     if (!volumeSettingEl) return;
 
@@ -127,18 +141,21 @@ function volumeSetting(playerDisplay) {
     // ホバーアクションを追加
     addHoverAction(playerDisplay, volumeSettingEl);
 }
-function setSimpleScreen() {
+async function setSimpleScreen() {
 
-    const playerDisplay = document.querySelector('[class*="_player-display_"]');
+    // プレイヤー本体が現れるまで待つ（未描画のまま変形して例外になるのを防ぐ）
+    const playerDisplay = await waitForElement('[class*="_player-display_"]');
+    if (!playerDisplay) return; // 見つからなければ変形しない（素の表示のまま）
+
     const playerDisplayScreen = document.querySelector('[class*="_player-display-screen_"]');
     const playerDisplayFooter = document.querySelector('[class*="_player-display-footer_"]');
     const commonHeader = document.querySelector('[class*="_common-header_"]');
 
     document.body.classList.add('overflowHidden');
     playerDisplay.classList.add('fullScreenView');
-    playerDisplayScreen.classList.add('minSizeNone');
-    playerDisplayFooter.classList.add('hiddenView');
-    commonHeader.classList.add('hiddenView');
+    playerDisplayScreen?.classList.add('minSizeNone');
+    playerDisplayFooter?.classList.add('hiddenView');
+    commonHeader?.classList.add('hiddenView');
 
     // 音量設定機能追加
     setTimeout(() => {
@@ -146,10 +163,11 @@ function setSimpleScreen() {
     }, 1000);
 }
 
-function setFullScreen() {
+async function setFullScreen() {
 
-    const leoPlayer = document.querySelector('[class*="_leo-player_"]');
-    const fullScreenButton = document.querySelector('[class*="fullscreen-button"]');
+    const leoPlayer = await waitForElement('[class*="_leo-player_"]');
+    const fullScreenButton = await waitForElement('[class*="fullscreen-button"]');
+    if (!leoPlayer || !fullScreenButton) return; // 見つからなければ何もしない
 
     leoPlayer.classList.add('minSizeNone');
     fullScreenButton.click();

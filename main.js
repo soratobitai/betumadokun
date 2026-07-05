@@ -2,7 +2,7 @@ let defaultOptions = {
     windowmode: '2',
     screenmode: '1',
     window_w: 500,
-    window_h: 281.3,
+    window_h: 281,
     alwaysOnTop: false,
 };
 let options = {};
@@ -279,7 +279,7 @@ function addActions(anchorElement) {
             });
             win.addEventListener('unload', (event) => {
                 if (event.currentTarget.location.href === 'about:blank') return;
-                openedWindows = openedWindows.filter(win_ => win_.location.href !== event.currentTarget.location.href); // ウィンドウを閉じたらリストから削除
+                openedWindows = openedWindows.filter(win_ => win_ !== win); // ウィンドウを閉じたらリストから削除
                 windowFocusOrder.delete(win); // フォーカス順序を削除
                 
                 // 閉じられたウィンドウが最後のアクティブウィンドウだった場合
@@ -524,8 +524,8 @@ function addModalEventListeners() {
     // アスペクト比ボタン
     const aspectButton = document.getElementById('nicolive_aspect_button');
     aspectButton.addEventListener('click', () => {
-        const width = parseInt(window_w_input.value, 10);
-        const height = Math.round((width * (9 / 16)) * 10) / 10;
+        const width = convertInt(window_w_input.value, options.window_w);
+        const height = Math.round(width * (9 / 16));
         window_h_input.value = height;
         saveModalOptions();
     });
