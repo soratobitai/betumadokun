@@ -134,6 +134,12 @@ function addHoverAction(playerDisplay, targetElement) {
             targetElement.style.display = 'none';
         }
     });
+
+    // この関数は要素追加(1秒後)のタイミングで呼ばれるため、既にプレイヤー上にマウスがある場合は
+    // mouseenter が発火せず表示されない。その場で現在のホバー状態に合わせて表示する。
+    if (playerDisplay.matches(':hover')) {
+        targetElement.style.display = 'flex';
+    }
 }
 
 // クローンや相互同期のロジックは撤去

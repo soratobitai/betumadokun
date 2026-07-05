@@ -73,6 +73,13 @@
     background-color: rgba(0, 0, 0, .85);
 }
 
+/* サムネの入れ物（アンカー）にホバーでボタンを表示。
+   イベント経路に依存しないため、Shadow DOM 内のウィジェットでも確実に機能する */
+.nicolive_thumb_host:hover .nicolive_link_button,
+.nicolive_thumb_host:hover .nicolive_settings_button {
+    opacity: 1;
+}
+
 /* モーダル */
 .nicolive_modal {
     display: block;

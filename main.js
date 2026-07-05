@@ -32,6 +32,9 @@ let lastActiveWindow = null; // 最後にアクティブだった別窓を記録
 /** @type {Map<Window, number>} */
 let windowFocusOrder = new Map(); // 各ウィンドウのフォーカス順序を記録（タイムスタンプ + 開いた順序）
 
+// Shadow DOM 内へ注入する main.css のテキスト（起動時に先読みしてキャッシュ）
+let mainCssText = '';
+
 /**
  * ブラウザがアイドル状態になったときに処理を実行する
  * 古いブラウザ向けに fallback として setTimeout を使用
@@ -46,37 +49,56 @@ function runWhenIdle(callback, fallbackDelay = 2000) {
     }
 }
 
+// ===== 番組サムネの能動スキャン & ボタン注入 =====
+// 一部ウィジェット（Shadow DOM 内のオーバーレイ）はホバー起点だと img/リンクに届かず検出
+// できないため、ライトDOM＋open Shadow を貫通して能動的に走査し注入する。
+// ボタンの表示は CSS の :hover（.nicolive_thumb_host:hover）で行うのでイベント経路に依存しない。
+
+/** @type {WeakSet<Node>} */
+const observedRoots = new WeakSet();
+let scanTimer = 0;
+
+// DOM 変化のたびに走らせないよう、まとめて遅延実行
+function scheduleScan() {
+    clearTimeout(scanTimer);
+    scanTimer = setTimeout(() => scanAndInsertButtons(document), 300);
+}
+
+// root(document / ShadowRoot) の変化を監視して再走査する（root ごとに一度だけ登録）
+/** @param {Document | ShadowRoot} root */
+function observeRoot(root) {
+    if (observedRoots.has(root)) return;
+    observedRoots.add(root);
+    new MutationObserver(scheduleScan).observe(root, { childList: true, subtree: true });
+}
+
+// ライトDOM＋open Shadow DOM を貫通して番組サムネを探し、ボタンを注入する
+/** @param {Document | ShadowRoot} root */
+function scanAndInsertButtons(root) {
+    observeRoot(root);
+    let all;
+    try {
+        all = root.querySelectorAll('*');
+    } catch (e) {
+        return;
+    }
+    all.forEach((el) => {
+        if (el.tagName === 'IMG' && isTargetImage(el)) insertPopupButton(el);
+        if (el.shadowRoot) scanAndInsertButtons(el.shadowRoot);
+    });
+}
+
 runWhenIdle(async () => {
     // オプションを取得
     options = await getOptions();
 
-    // マウスオーバー時に対象判定し、未作成ならボタンを作成して表示
-    document.addEventListener('mouseover', function (event) {
-        const target = event.target;
-        if (!target || !(target instanceof Element)) return;
+    // Shadow DOM 内にボタンを表示するため、注入用に main.css を先読みしておく
+    fetch(chrome.runtime.getURL('main.css')).then(r => r.text()).then(t => { mainCssText = t; }).catch(() => { });
 
-        const imageElement = target.closest && target.closest('img');
-        if (!imageElement) return;
-
-        if (!isTargetImage(imageElement)) return;
-
-        const anchorElement = imageElement.parentNode;
-
-        // 初回のみ作成
-        if (!anchorElement.querySelector('.nicolive_link_button_wrap')) {
-            insertPopupButton(imageElement);
-        }
-
-        // 既存/新規問わず、現在のホバーで確実に表示
-        const nicolive_link_button = anchorElement.querySelector('.nicolive_link_button');
-        if (nicolive_link_button) {
-            nicolive_link_button.classList.add('nicolive_link_button_active');
-        }
-        const nicolive_settings_button = anchorElement.querySelector('.nicolive_settings_button');
-        if (nicolive_settings_button) {
-            nicolive_settings_button.classList.add('nicolive_settings_button_active');
-        }
-    });
+    // 番組サムネを能動的に走査してボタンを注入（初回＋遅延再走査で遅延ロードのウィジェットに追従）
+    scanAndInsertButtons(document);
+    setTimeout(() => scanAndInsertButtons(document), 1500);
+    setTimeout(() => scanAndInsertButtons(document), 4000);
 })
 
 
@@ -113,13 +135,16 @@ function resolveWatchUrl(anchorElement) {
  * @returns {boolean}
  */
 function isTargetImage(imageElement) {
-    const parentNode = /** @type {HTMLAnchorElement} */ (imageElement.parentNode);
+    // 自前で注入したボタンのアイコン画像(link.png)は対象外。
+    // これを弾かないと、番組<a>配下にある自分のアイコンを再検出して入れ子注入が無限に続く
+    if (imageElement.closest('.nicolive_link_button_wrap')) return false;
 
-    // 画像の親がリンク(<a>)か
-    if (parentNode.tagName.toLowerCase() !== 'a' || !parentNode.href) return false;
+    // 画像を包む最寄りのリンク(<a>)を取得（live は画像の直親、blog は間に <div> 等が挟まる）
+    const anchorElement = /** @type {HTMLAnchorElement} */ (imageElement.closest('a'));
+    if (!anchorElement || !anchorElement.href) return false;
 
     // 視聴ページURLを解決できるものだけ対象にする
-    return resolveWatchUrl(parentNode) !== null;
+    return resolveWatchUrl(anchorElement) !== null;
 }
 
 /**
@@ -129,60 +154,111 @@ function isTargetImage(imageElement) {
 async function insertPopupButton(imageElement) {
     if (!isTargetImage(imageElement)) return;
 
-    const anchorElement = /** @type {HTMLAnchorElement} */ (imageElement.parentNode);
+    // URL解決は最寄りの <a>、ボタンの挿入・配置は画像の入れ物（直親）を基準にする。
+    // live は入れ物＝<a> だが、blog は <a><div><img>… のように間に要素が挟まる
+    const anchorElement = /** @type {HTMLAnchorElement} */ (imageElement.closest('a'));
+    const containerElement = /** @type {HTMLElement} */ (imageElement.parentElement);
+    if (!anchorElement || !containerElement) return;
 
-    // ボタンが既にある場合はスルー
-    if (anchorElement.querySelector('.nicolive_link_button_wrap')) return;
+    // ボタンが既にある場合はスルー（画像の入れ物単位で判定）
+    if (containerElement.querySelector('.nicolive_link_button_wrap')) return;
 
-    // 別窓ボタンの配置を決める：右上が予約ボタン等で埋まっている場合のみ右辺中央へ退避する
-    // （通常サムネ・広告サムネ共通。判定は挿入前に行う＝自前ボタンを誤検出しないため）
-    const useCenter = isTopRightOccupied(anchorElement);
+    // Shadow DOM 内なら、その root に main.css を注入（ライトDOMは content_scripts で適用済み）
+    ensureStylesInRoot(containerElement.getRootNode());
 
-    // anchorElementの最後に挿入（別窓ボタンと設定ボタン）
+    // CSS の :hover でボタンを表示するための印（カード全体＝アンカーに付ける）
+    anchorElement.classList.add('nicolive_thumb_host');
+
+    // 画像の直後（＝入れ物の中）に挿入（別窓ボタンと設定ボタン）
     imageElement.insertAdjacentHTML('afterend', linkButton + settingsButton);
 
-    if (useCenter) {
-        const nicolive_link_button_wrap = /** @type {HTMLElement} */ (anchorElement.querySelector('.nicolive_link_button_wrap'));
-        if (nicolive_link_button_wrap) {
-            nicolive_link_button_wrap.classList.add('nicolive_link_button_wrap_center');
-        }
+    // 配置（既定＝右上／右上が埋まっていれば右辺中央）は、カードが実際に表示された時点で判定する。
+    // 能動スキャン時点では画面外のカードが多く、その場で判定すると誤って中央になってしまうため。
+    placementObserver.observe(containerElement);
+
+    // 入れ物を relative に（ボタンの絶対配置基準）
+    if (!containerElement.style.position) {
+        containerElement.style.position = 'relative';
+        containerElement.style.overflow = 'visible';
     }
 
-    // relative
-    if (!anchorElement.style.position) {
-        anchorElement.style.position = 'relative';
-        anchorElement.style.overflow = 'visible';
-    }
-
-    // クリックイベントなど追加
-    addActions(anchorElement);
+    // クリックイベントなど追加（URLはアンカー、ボタン走査・ホバーは入れ物）
+    addActions(anchorElement, containerElement);
 }
 
 /**
- * ボタン設置予定地（アンカー右上・約17px内側）が、番組リンク(anchor)外の別要素で
- * 覆われているか判定する。覆われていれば別窓ボタンを右辺中央へ退避する。
- * ニコ生のクラス名には依存しない（座標ベース）。判定不能時は安全側で true を返す。
- * @param {Element} anchorElement 別窓ボタンを配置する番組リンク要素
- * @returns {boolean} 覆われている（＝中央へ退避すべき）なら true
+ * ボタン設置予定地（rectEl の右上・約17px内側）が、カード(cardEl)の「外」の要素で
+ * 覆われているか判定する。カード内の要素（番組画像・透明な操作用オーバーレイ・自前ボタン等）は
+ * 重なりに含めない（それらで誤って中央退避しないため）。覆われていれば右辺中央へ退避する。
+ * 判定できないとき（未レイアウト/画面外/取得不能）は false（＝既定位置の右上のまま）。
+ * 中央退避は「カード外の要素（＝ニコ生のタイムシフト予約ボタン等）が右上に重なっている」と
+ * 確認できたときだけ行う。
+ * @param {Element} rectEl 位置の基準（別窓ボタンが置かれる入れ物）
+ * @param {Element} cardEl カード全体（番組リンク <a>）
+ * @returns {boolean}
  */
-function isTopRightOccupied(anchorElement) {
-    const rect = anchorElement.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return true; // 測定不能は安全側（中央）
+function isTopRightOccupied(rectEl, cardEl) {
+    const rect = rectEl.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
 
     // 別窓ボタン（右上・約30px四方）の中心付近を調べる
     const x = rect.right - 17;
     const y = rect.top + 17;
-    if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return true; // 画面外は安全側
+    if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return false;
 
-    const topEl = document.elementFromPoint(x, y);
-    if (!topEl) return true; // 取得不能は安全側
+    // Shadow DOM 内では document ではなく所属 root(ShadowRoot) の elementFromPoint を使う
+    const root = rectEl.getRootNode();
+    const topEl = (root instanceof ShadowRoot ? root : document).elementFromPoint(x, y);
+    if (!topEl) return false;
 
-    // anchor 内の要素（番組画像や自前ボタン）や anchor の祖先コンテナ ＝ 重なりではない
-    if (anchorElement.contains(topEl)) return false;
-    if (topEl.contains(anchorElement)) return false;
+    // カード内の要素や、カードの祖先コンテナ ＝ 重なりではない
+    if (cardEl.contains(topEl)) return false;
+    if (topEl.contains(cardEl)) return false;
 
-    // それ以外（anchor 外の別要素が右上に重なっている）＝覆われている
+    // カード外の別要素が右上に重なっている（＝ニコ生のタイムシフト予約ボタン等）
     return true;
+}
+
+// カードが実際に表示された時点で右上/中央の配置を判定する。
+// 能動スキャン時点では未レイアウト/画面外のカードが多く、その場で判定すると
+// 右上が空いていても中央になってしまうため、可視化を待ってから判定する。
+const placementObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        placementObserver.unobserve(entry.target);
+        const container = /** @type {HTMLElement} */ (entry.target);
+        const card = container.closest('a');
+        const wrap = /** @type {HTMLElement} */ (container.querySelector('.nicolive_link_button_wrap'));
+        if (wrap && card && isTopRightOccupied(container, card)) {
+            wrap.classList.add('nicolive_link_button_wrap_center');
+        }
+    });
+}, { threshold: 0.5 });
+
+/** @type {WeakSet<ShadowRoot>} */
+const styledShadowRoots = new WeakSet();
+
+/**
+ * Shadow DOM 内にボタンを表示するため、その ShadowRoot に main.css を注入する（root ごとに一度）。
+ * ライトDOM(document)は content_scripts で既に適用済みなので何もしない。
+ * @param {Node} rootNode  containerElement.getRootNode() の戻り値
+ */
+function ensureStylesInRoot(rootNode) {
+    if (!(rootNode instanceof ShadowRoot) || styledShadowRoots.has(rootNode)) return;
+    styledShadowRoots.add(rootNode);
+
+    if (mainCssText) {
+        // 先読み済みならテキストを同期注入（チラつきなし）
+        const style = document.createElement('style');
+        style.textContent = mainCssText;
+        rootNode.appendChild(style);
+    } else {
+        // 先読み未完了時のフォールバック（非同期ロード）
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = chrome.runtime.getURL('main.css');
+        rootNode.appendChild(link);
+    }
 }
 
 let focusOrderCounter = 0; // フォーカス順序のカウンター
@@ -297,13 +373,16 @@ function trackOpenedWindow(win) {
     });
 }
 
-/** @param {HTMLAnchorElement} anchorElement */
-function addActions(anchorElement) {
+/**
+ * @param {HTMLAnchorElement} anchorElement 視聴URLの解決元（最寄りの <a>）
+ * @param {HTMLElement} containerElement ボタンが挿入された画像の入れ物
+ */
+function addActions(anchorElement, containerElement) {
 
     // 広告サムネは href が広告リダイレクトなので、視聴ページURLへ解決してから使う
     const liveUrl = resolveWatchUrl(anchorElement) || anchorElement.href;
-    const nicolive_link_button = anchorElement.querySelector('.nicolive_link_button');
-    const nicolive_settings_button = anchorElement.querySelector('.nicolive_settings_button');
+    const nicolive_link_button = containerElement.querySelector('.nicolive_link_button');
+    const nicolive_settings_button = containerElement.querySelector('.nicolive_settings_button');
 
     nicolive_link_button.addEventListener('click', function (e) {
         e.preventDefault();
@@ -352,15 +431,7 @@ function addActions(anchorElement) {
         openSettingsModal();
     }, false);
 
-    // ホバー時にボタン表示
-    anchorElement.addEventListener('mouseover', function () {
-        nicolive_link_button.classList.add('nicolive_link_button_active');
-        nicolive_settings_button.classList.add('nicolive_settings_button_active');
-    });
-    anchorElement.addEventListener('mouseleave', function () {
-        nicolive_link_button.classList.remove('nicolive_link_button_active');
-        nicolive_settings_button.classList.remove('nicolive_settings_button_active');
-    });
+    // ボタンの表示は CSS の :hover（.nicolive_thumb_host:hover）で行うため、JS でのクラス付与は不要
 }
 
 
