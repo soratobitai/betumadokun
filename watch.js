@@ -1,3 +1,4 @@
+// @ts-check
 // クエリを取得
 const url = new URL(window.location.href);
 const params = url.searchParams;
@@ -48,6 +49,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // ページがアイドル状態になってから実行（ブラウザがビジーでなくなるのを待つ）
         // callback は Promise を返す場合があり、完了（成否問わず）後に必ずローディングを閉じる
+        /** @param {() => any} callback */
         const executeWhenIdle = (callback) => {
             const run = () => {
                 Promise.resolve()
@@ -78,6 +80,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // 指定セレクタの要素が現れるまで待つ（最大 retries 回・interval ミリ秒間隔でポーリング）
 // ニコ生本体（React）の描画が遅れて要素が未生成のケースに対応する。見つからなければ null を返す
+/**
+ * @param {string} selector
+ * @param {{ retries?: number, interval?: number }} [opts]
+ * @returns {Promise<Element|null>}
+ */
 function waitForElement(selector, { retries = 20, interval = 250 } = {}) {
     return new Promise((resolve) => {
         const existing = document.querySelector(selector);
@@ -96,6 +103,10 @@ function waitForElement(selector, { retries = 20, interval = 250 } = {}) {
     });
 }
 
+/**
+ * @param {HTMLElement} playerDisplay
+ * @param {HTMLElement} targetElement
+ */
 function addHoverAction(playerDisplay, targetElement) {
 
     targetElement.style.display = 'none';
@@ -126,9 +137,10 @@ function addHoverAction(playerDisplay, targetElement) {
 }
 
 // クローンや相互同期のロジックは撤去
+/** @param {HTMLElement} playerDisplay */
 function volumeSetting(playerDisplay) {
     if (!playerDisplay) return;
-    const volumeSettingEl = document.querySelector('[class*="_volume-setting_"]');
+    const volumeSettingEl = /** @type {HTMLElement} */ (document.querySelector('[class*="_volume-setting_"]'));
     if (!volumeSettingEl) return;
 
     // オリジナルを playerDisplay 配下に移設（Reactのイベント委譲範囲内を維持）
@@ -144,7 +156,7 @@ function volumeSetting(playerDisplay) {
 async function setSimpleScreen() {
 
     // プレイヤー本体が現れるまで待つ（未描画のまま変形して例外になるのを防ぐ）
-    const playerDisplay = await waitForElement('[class*="_player-display_"]');
+    const playerDisplay = /** @type {HTMLElement} */ (await waitForElement('[class*="_player-display_"]'));
     if (!playerDisplay) return; // 見つからなければ変形しない（素の表示のまま）
 
     const playerDisplayScreen = document.querySelector('[class*="_player-display-screen_"]');
@@ -166,7 +178,7 @@ async function setSimpleScreen() {
 async function setFullScreen() {
 
     const leoPlayer = await waitForElement('[class*="_leo-player_"]');
-    const fullScreenButton = await waitForElement('[class*="fullscreen-button"]');
+    const fullScreenButton = /** @type {HTMLElement} */ (await waitForElement('[class*="fullscreen-button"]'));
     if (!leoPlayer || !fullScreenButton) return; // 見つからなければ何もしない
 
     leoPlayer.classList.add('minSizeNone');

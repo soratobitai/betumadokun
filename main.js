@@ -1,3 +1,16 @@
+// @ts-check
+
+/**
+ * 拡張の設定値
+ * @typedef {Object} Options
+ * @property {string} windowmode  別窓モード '1'=シングル / '2'=多窓 / '3'=タブ
+ * @property {string} screenmode  映像モード '1'=シンプル / '2'=多機能
+ * @property {number|string} window_w  別窓の幅(px)。既定は数値、フォーム入力経由では文字列
+ * @property {number|string} window_h  別窓の高さ(px)。既定は数値、フォーム入力経由では文字列
+ * @property {boolean} alwaysOnTop  別窓を常に手前に表示するか
+ */
+
+/** @type {Options} */
 let defaultOptions = {
     windowmode: '2',
     screenmode: '1',
@@ -5,21 +18,24 @@ let defaultOptions = {
     window_h: 281,
     alwaysOnTop: false,
 };
-let options = {};
+let options = /** @type {Options} */ ({});
 const linkIconURL = chrome.runtime.getURL('images/link.png');
 const linkButton = `<div class="nicolive_link_button_wrap"><div class="nicolive_link_button"><img src="${linkIconURL}"></div></div>`;
 const settingsButton = `<div class="nicolive_settings_button_wrap"><div class="nicolive_settings_button">⚙</div></div>`;
 
+/** @type {Window[]} */
 let openedWindows = [];
 let focusOpenedWindowFlag = true;
 let windowPositionOffset = 30;
+/** @type {Window|null} */
 let lastActiveWindow = null; // 最後にアクティブだった別窓を記録
+/** @type {Map<Window, number>} */
 let windowFocusOrder = new Map(); // 各ウィンドウのフォーカス順序を記録（タイムスタンプ + 開いた順序）
 
 /**
  * ブラウザがアイドル状態になったときに処理を実行する
  * 古いブラウザ向けに fallback として setTimeout を使用
- * @param {Function} callback - 実行したい処理
+ * @param {() => void} callback - 実行したい処理
  * @param {number} fallbackDelay - fallback 時の遅延ミリ秒（デフォルト2000ms）
  */
 function runWhenIdle(callback, fallbackDelay = 2000) {
@@ -64,8 +80,13 @@ runWhenIdle(async () => {
 })
 
 
+/**
+ * 画像がニコ生番組リンク配下の対象画像か判定する
+ * @param {Element} imageElement
+ * @returns {boolean}
+ */
 function isTargetImage(imageElement) {
-    const parentNode = imageElement.parentNode;
+    const parentNode = /** @type {HTMLAnchorElement} */ (imageElement.parentNode);
 
     // リンクが貼られているか
     if (parentNode.tagName.toLowerCase() !== 'a' || !parentNode.href) return false;
@@ -80,10 +101,14 @@ function isTargetImage(imageElement) {
     return true;
 }
 
+/**
+ * サムネイル画像に別窓ボタン・設定ボタンを挿入する
+ * @param {Element} imageElement
+ */
 async function insertPopupButton(imageElement) {
     if (!isTargetImage(imageElement)) return;
 
-    const anchorElement = imageElement.parentNode;
+    const anchorElement = /** @type {HTMLAnchorElement} */ (imageElement.parentNode);
 
     // ボタンが既にある場合はスルー
     if (anchorElement.querySelector('.nicolive_link_button_wrap')) return;
@@ -93,11 +118,11 @@ async function insertPopupButton(imageElement) {
 
     // フレームがある場合は位置をズラす
     if (hasNicoadFrame(imageElement)) {
-        const nicolive_link_button_wrap = anchorElement.querySelector('.nicolive_link_button_wrap');
+        const nicolive_link_button_wrap = /** @type {HTMLElement} */ (anchorElement.querySelector('.nicolive_link_button_wrap'));
         if (nicolive_link_button_wrap) {
             nicolive_link_button_wrap.style.top = '30px';
         }
-        const nicolive_settings_button_wrap = anchorElement.querySelector('.nicolive_settings_button_wrap');
+        const nicolive_settings_button_wrap = /** @type {HTMLElement} */ (anchorElement.querySelector('.nicolive_settings_button_wrap'));
         if (nicolive_settings_button_wrap) {
             nicolive_settings_button_wrap.style.bottom = '30px';
         }
@@ -113,6 +138,11 @@ async function insertPopupButton(imageElement) {
     addActions(anchorElement);
 }
 
+/**
+ * 祖先にニコニ広告フレームがあるか
+ * @param {Element|null} element
+ * @returns {boolean}
+ */
 function hasNicoadFrame(element) {
     while (element) {
         if (element.classList && Array.from(element.classList).some(className => className.includes('nicoad-frame'))) {
@@ -164,6 +194,7 @@ function focusOpenedWindows() {
 window.focusOpenedWindows = focusOpenedWindows;
 
 // 常に手前に表示する設定
+/** @type {{ type: string, handler: EventListener }[]} */
 let alwaysOnTopEventHandlers = [];
 
 function startAlwaysOnTopMonitoring() {
@@ -196,6 +227,7 @@ function stopAlwaysOnTopMonitoring() {
 
 // 別窓を追跡リストに追加し、フォーカス/クローズ（unload）を監視する
 // シングル・多窓で共通のトラッキング処理
+/** @param {Window} win */
 function trackOpenedWindow(win) {
     openedWindows.push(win);
     lastActiveWindow = win; // 開いた直後は最後のアクティブウィンドウとして記録
@@ -216,8 +248,8 @@ function trackOpenedWindow(win) {
         }
     });
 
-    win.addEventListener('unload', (event) => {
-        if (event.currentTarget.location.href === 'about:blank') return;
+    win.addEventListener('unload', () => {
+        if (win.location.href === 'about:blank') return;
         openedWindows = openedWindows.filter(win_ => win_ !== win); // ウィンドウを閉じたらリストから削除
         windowFocusOrder.delete(win); // フォーカス順序を削除
 
@@ -233,6 +265,7 @@ function trackOpenedWindow(win) {
     });
 }
 
+/** @param {HTMLAnchorElement} anchorElement */
 function addActions(anchorElement) {
 
     const liveUrl = anchorElement.href;
@@ -317,9 +350,10 @@ chrome.storage.onChanged.addListener(function (changes) {
 });
 
 // オプションを取得（保存値で既定値を上書きして返す）
+/** @returns {Promise<Options>} */
 const getOptions = async () => {
     const stored = await chrome.storage.local.get();
-    return { ...defaultOptions, ...stored };
+    return /** @type {Options} */ ({ ...defaultOptions, ...stored });
 };
 
 // 設定モーダルを開く
@@ -429,24 +463,34 @@ function openSettingsModal() {
     addModalEventListeners();
 }
 
+// セレクタで input 要素を型付き取得するヘルパー
+/**
+ * @param {ParentNode} root
+ * @param {string} selector
+ * @returns {HTMLInputElement}
+ */
+const qInput = (root, selector) => /** @type {HTMLInputElement} */ (root.querySelector(selector));
+
 // モーダルの初期値を設定
 function initializeModalValues() {
     // 別窓モード
     document.querySelectorAll('input[name="windowmode"]').forEach(input => {
-        input.checked = input.value === options.windowmode;
+        const el = /** @type {HTMLInputElement} */ (input);
+        el.checked = el.value === options.windowmode;
     });
 
     // 映像モード
     document.querySelectorAll('input[name="screenmode"]').forEach(input => {
-        input.checked = input.value === options.screenmode;
+        const el = /** @type {HTMLInputElement} */ (input);
+        el.checked = el.value === options.screenmode;
     });
 
     // 別窓サイズ
-    document.querySelector('input[name="window_w"]').value = options.window_w;
-    document.querySelector('input[name="window_h"]').value = options.window_h;
+    qInput(document, 'input[name="window_w"]').value = String(options.window_w);
+    qInput(document, 'input[name="window_h"]').value = String(options.window_h);
 
     // 表示オプション
-    document.querySelector('input[name="alwaysOnTop"]').checked = options.alwaysOnTop;
+    qInput(document, 'input[name="alwaysOnTop"]').checked = options.alwaysOnTop;
 }
 
 // モーダルのイベントリスナーを追加
@@ -471,27 +515,25 @@ function addModalEventListeners() {
     form.addEventListener('change', saveModalOptions);
 
     // サイズ入力のblurイベント
-    const window_w_input = form.querySelector('input[name="window_w"]');
-    const window_h_input = form.querySelector('input[name="window_h"]');
+    const window_w_input = qInput(document, 'input[name="window_w"]');
+    const window_h_input = qInput(document, 'input[name="window_h"]');
 
-    window_w_input.addEventListener('blur', (e) => {
-        const value = convertInt(e.target.value, options.window_w);
-        e.target.value = value;
+    window_w_input.addEventListener('blur', () => {
+        window_w_input.value = String(convertInt(window_w_input.value, options.window_w));
         saveModalOptions();
     });
 
-    window_h_input.addEventListener('blur', (e) => {
-        const value = convertInt(e.target.value, options.window_h);
-        e.target.value = value;
+    window_h_input.addEventListener('blur', () => {
+        window_h_input.value = String(convertInt(window_h_input.value, options.window_h));
         saveModalOptions();
     });
 
     // アスペクト比ボタン
     const aspectButton = document.getElementById('nicolive_aspect_button');
     aspectButton.addEventListener('click', () => {
-        const width = convertInt(window_w_input.value, options.window_w);
+        const width = Number(convertInt(window_w_input.value, options.window_w));
         const height = Math.round(width * (9 / 16));
-        window_h_input.value = height;
+        window_h_input.value = String(height);
         saveModalOptions();
     });
 }
@@ -500,16 +542,22 @@ function addModalEventListeners() {
 async function saveModalOptions() {
     const form = document.getElementById('nicolive_settings_form');
     
-    options.windowmode = form.querySelector('input[name="windowmode"]:checked').value;
-    options.screenmode = form.querySelector('input[name="screenmode"]:checked').value;
-    options.window_w = form.querySelector('input[name="window_w"]').value;
-    options.window_h = form.querySelector('input[name="window_h"]').value;
-    options.alwaysOnTop = form.querySelector('input[name="alwaysOnTop"]').checked;
+    options.windowmode = qInput(form, 'input[name="windowmode"]:checked').value;
+    options.screenmode = qInput(form, 'input[name="screenmode"]:checked').value;
+    options.window_w = qInput(form, 'input[name="window_w"]').value;
+    options.window_h = qInput(form, 'input[name="window_h"]').value;
+    options.alwaysOnTop = qInput(form, 'input[name="alwaysOnTop"]').checked;
 
     await chrome.storage.local.set(options);
 }
 
 // 数値フォームを監視　強制的に数値に変換
+/**
+ * 文字列を正の整数に変換（全角は半角化）。不正なら defaultVal を返す
+ * @param {string} value
+ * @param {number|string} defaultVal
+ * @returns {number|string}
+ */
 function convertInt(value, defaultVal) {
     // 全角を半角に変換
     value = value.replace(/[Ａ-Ｚａ-ｚ０-９]/g, function (s) {
