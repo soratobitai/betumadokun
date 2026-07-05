@@ -81,24 +81,45 @@ runWhenIdle(async () => {
 
 
 /**
- * 画像がニコ生番組リンク配下の対象画像か判定する
+ * アンカーから視聴ページURL（https://live.nicovideo.jp/watch/lvXXXX）を解決する。
+ * ・通常サムネ: href に watch/lv を含む → その href をそのまま返す
+ * ・ニコニ広告サムネ: href は広告リダイレクト(api.nicoad...)で番組IDを含まないため、
+ *   祖先の <article id="lvXXXX"> から番組IDを取り出して視聴URLを組み立てる
+ *   （リダイレクトを追跡しないので、かつて「対応不可」だった CORS 制限の影響を受けない）
+ * 解決できなければ null。
+ * @param {HTMLAnchorElement} anchorElement
+ * @returns {string|null}
+ */
+function resolveWatchUrl(anchorElement) {
+    const href = anchorElement.href || '';
+    if (href.includes('live.nicovideo.jp/watch/lv')) return href;
+
+    // ニコニ広告サムネ（href が広告リダイレクト）のときだけ、祖先の <article id="lvXXXX">
+    // から番組IDを取り出して視聴URLを組み立てる。
+    // ※ 広告リンクに限定＋<article> の lv 数値idに限定することで、同じカード内の別リンク画像や
+    //   ライブ以外の広告（動画/静画/コミュニティ）を誤って対象化しない
+    if (href.includes('api.nicoad.nicovideo.jp')) {
+        const idEl = anchorElement.closest('article[id^="lv"]');
+        if (idEl && /^lv\d+$/.test(idEl.id)) {
+            return `https://live.nicovideo.jp/watch/${idEl.id}`;
+        }
+    }
+    return null;
+}
+
+/**
+ * 画像がニコ生番組リンク配下の対象画像か判定する（通常サムネ＋ニコニ広告サムネ）
  * @param {Element} imageElement
  * @returns {boolean}
  */
 function isTargetImage(imageElement) {
     const parentNode = /** @type {HTMLAnchorElement} */ (imageElement.parentNode);
 
-    // リンクが貼られているか
+    // 画像の親がリンク(<a>)か
     if (parentNode.tagName.toLowerCase() !== 'a' || !parentNode.href) return false;
 
-    // ニコ生の番組へのリンクかどうか
-    const allowedURLs = [
-        'live.nicovideo.jp/watch/lv',
-        // 'api.nicoad.nicovideo.jp/v1/nicoad/' // 広告リンクは視聴ページへ転送される（CORS制限あり）仕組みなので対応不可
-    ];
-    if (!allowedURLs.some(url => parentNode.href.includes(url))) return false;
-
-    return true;
+    // 視聴ページURLを解決できるものだけ対象にする
+    return resolveWatchUrl(parentNode) !== null;
 }
 
 /**
@@ -113,18 +134,17 @@ async function insertPopupButton(imageElement) {
     // ボタンが既にある場合はスルー
     if (anchorElement.querySelector('.nicolive_link_button_wrap')) return;
 
+    // 別窓ボタンの配置を決める：右上が予約ボタン等で埋まっている場合のみ右辺中央へ退避する
+    // （通常サムネ・広告サムネ共通。判定は挿入前に行う＝自前ボタンを誤検出しないため）
+    const useCenter = isTopRightOccupied(anchorElement);
+
     // anchorElementの最後に挿入（別窓ボタンと設定ボタン）
     imageElement.insertAdjacentHTML('afterend', linkButton + settingsButton);
 
-    // フレームがある場合は位置をズラす
-    if (hasNicoadFrame(imageElement)) {
+    if (useCenter) {
         const nicolive_link_button_wrap = /** @type {HTMLElement} */ (anchorElement.querySelector('.nicolive_link_button_wrap'));
         if (nicolive_link_button_wrap) {
-            nicolive_link_button_wrap.style.top = '30px';
-        }
-        const nicolive_settings_button_wrap = /** @type {HTMLElement} */ (anchorElement.querySelector('.nicolive_settings_button_wrap'));
-        if (nicolive_settings_button_wrap) {
-            nicolive_settings_button_wrap.style.bottom = '30px';
+            nicolive_link_button_wrap.classList.add('nicolive_link_button_wrap_center');
         }
     }
 
@@ -139,18 +159,30 @@ async function insertPopupButton(imageElement) {
 }
 
 /**
- * 祖先にニコニ広告フレームがあるか
- * @param {Element|null} element
- * @returns {boolean}
+ * ボタン設置予定地（アンカー右上・約17px内側）が、番組リンク(anchor)外の別要素で
+ * 覆われているか判定する。覆われていれば別窓ボタンを右辺中央へ退避する。
+ * ニコ生のクラス名には依存しない（座標ベース）。判定不能時は安全側で true を返す。
+ * @param {Element} anchorElement 別窓ボタンを配置する番組リンク要素
+ * @returns {boolean} 覆われている（＝中央へ退避すべき）なら true
  */
-function hasNicoadFrame(element) {
-    while (element) {
-        if (element.classList && Array.from(element.classList).some(className => className.includes('nicoad-frame'))) {
-            return true;
-        }
-        element = element.parentElement;
-    }
-    return false;
+function isTopRightOccupied(anchorElement) {
+    const rect = anchorElement.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return true; // 測定不能は安全側（中央）
+
+    // 別窓ボタン（右上・約30px四方）の中心付近を調べる
+    const x = rect.right - 17;
+    const y = rect.top + 17;
+    if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return true; // 画面外は安全側
+
+    const topEl = document.elementFromPoint(x, y);
+    if (!topEl) return true; // 取得不能は安全側
+
+    // anchor 内の要素（番組画像や自前ボタン）や anchor の祖先コンテナ ＝ 重なりではない
+    if (anchorElement.contains(topEl)) return false;
+    if (topEl.contains(anchorElement)) return false;
+
+    // それ以外（anchor 外の別要素が右上に重なっている）＝覆われている
+    return true;
 }
 
 let focusOrderCounter = 0; // フォーカス順序のカウンター
@@ -268,7 +300,8 @@ function trackOpenedWindow(win) {
 /** @param {HTMLAnchorElement} anchorElement */
 function addActions(anchorElement) {
 
-    const liveUrl = anchorElement.href;
+    // 広告サムネは href が広告リダイレクトなので、視聴ページURLへ解決してから使う
+    const liveUrl = resolveWatchUrl(anchorElement) || anchorElement.href;
     const nicolive_link_button = anchorElement.querySelector('.nicolive_link_button');
     const nicolive_settings_button = anchorElement.querySelector('.nicolive_settings_button');
 

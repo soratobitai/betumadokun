@@ -5,6 +5,11 @@
     padding: 2px;
     z-index: 2;
 }
+/* 右上が予約ボタン等で埋まっている場合の退避先（右辺中央） */
+.nicolive_link_button_wrap.nicolive_link_button_wrap_center {
+    top: 50%;
+    transform: translateY(-50%);
+}
 
 .nicolive_link_button {
     width: 30px;
