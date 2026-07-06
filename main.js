@@ -44,43 +44,59 @@ function runWhenIdle(callback, fallbackDelay = 2000) {
     }
 }
 
-// ===== 番組サムネの能動スキャン & ボタン注入 =====
-// 一部ウィジェット（Shadow DOM 内のオーバーレイ）はホバー起点だと img/リンクに届かず検出
-// できないため、ライトDOM＋open Shadow を貫通して能動的に走査し注入する。
-// ボタンの表示は CSS の :hover（.nicolive_thumb_host:hover）で行うのでイベント経路に依存しない。
+// ===== 番組サムネの検出 & ボタン注入 =====
+// ・live（ライトDOMの <a><img>）はホバー起点＋直親<a>の軽量判定（下部 runWhenIdle 内で登録）。
+//   SPA の常時 DOM 変化に反応しないため軽い。
+// ・blog は番組ウィジェットが Shadow DOM 内でオーバーレイに覆われ、ホバーでは img/リンクに
+//   届かないため、open Shadow を貫通して能動走査する。表示は CSS の :hover。
+//   継続コストを抑えるため、MutationObserver は「追加ノードのみ」走査し、全再走査はしない。
 
 /** @type {WeakSet<Node>} */
 const observedRoots = new WeakSet();
-let scanTimer = 0;
+/** @type {WeakSet<Element>} 遅延再走査を予約済みのカスタム要素（重複予約を防ぐ） */
+const upgradeWatched = new WeakSet();
 
-// DOM 変化のたびに走らせないよう、まとめて遅延実行
-function scheduleScan() {
-    clearTimeout(scanTimer);
-    scanTimer = setTimeout(() => scanAndInsertButtons(document), 300);
-}
-
-// root(document / ShadowRoot) の変化を監視して再走査する（root ごとに一度だけ登録）
-/** @param {Document | ShadowRoot} root */
-function observeRoot(root) {
-    if (observedRoots.has(root)) return;
-    observedRoots.add(root);
-    new MutationObserver(scheduleScan).observe(root, { childList: true, subtree: true });
-}
-
-// ライトDOM＋open Shadow DOM を貫通して番組サムネを探し、ボタンを注入する
-/** @param {Document | ShadowRoot} root */
-function scanAndInsertButtons(root) {
-    observeRoot(root);
+// node（root もしくは追加されたサブツリー）を走査して対象IMGにボタンを注入する。
+// 見つけた open Shadow root は監視登録して再帰する（後から描画される img も拾えるように）。
+/** @param {ParentNode} node */
+function scanForButtons(node) {
+    // 追加ノード自身が IMG のこともある
+    if (node instanceof Element && node.tagName === 'IMG' && isTargetImage(node, false)) {
+        insertPopupButton(node, false);
+    }
     let all;
     try {
-        all = root.querySelectorAll('*');
+        all = node.querySelectorAll('*');
     } catch (e) {
         return;
     }
     all.forEach((el) => {
-        if (el.tagName === 'IMG' && isTargetImage(el)) insertPopupButton(el);
-        if (el.shadowRoot) scanAndInsertButtons(el.shadowRoot);
+        if (el.tagName === 'IMG' && isTargetImage(el, false)) insertPopupButton(el, false);
+        if (el.shadowRoot) {
+            observeRoot(el.shadowRoot); // ウィジェットの Shadow を監視（後からの img 描画も拾う）
+            scanForButtons(el.shadowRoot);
+        } else if (el.tagName.includes('-') && !upgradeWatched.has(el)) {
+            // Shadow 未アタッチのカスタム要素（例: <nico-audition-*>）。アップグレードで Shadow が
+            // 遅れて付く場合に取りこぼさないよう、一度だけ遅延再走査する（全再走査は避ける）。
+            upgradeWatched.add(el);
+            setTimeout(() => scanForButtons(el), 800);
+        }
     });
+}
+
+// Document/ShadowRoot を監視する（root ごとに一度だけ）。
+// 全再走査はせず、追加されたノードのサブツリーだけを走査する＝継続コストを抑える。
+/** @param {Document | ShadowRoot} root */
+function observeRoot(root) {
+    if (observedRoots.has(root)) return;
+    observedRoots.add(root);
+    new MutationObserver((mutations) => {
+        for (const m of mutations) {
+            m.addedNodes.forEach((n) => {
+                if (n instanceof Element) scanForButtons(n);
+            });
+        }
+    }).observe(root, { childList: true, subtree: true });
 }
 
 runWhenIdle(async () => {
@@ -98,10 +114,24 @@ runWhenIdle(async () => {
     // Shadow DOM 内にボタンを表示するため、注入用に main.css を先読みしておく
     fetch(chrome.runtime.getURL('main.css')).then(r => r.text()).then(t => { mainCssText = t; }).catch(() => { });
 
-    // 番組サムネを能動的に走査してボタンを注入（初回＋遅延再走査で遅延ロードのウィジェットに追従）
-    scanAndInsertButtons(document);
-    setTimeout(() => scanAndInsertButtons(document), 1500);
-    setTimeout(() => scanAndInsertButtons(document), 4000);
+    // 番組サムネにボタンを注入する（ページ種別で方式を分ける）。
+    if (location.hostname === 'blog.nicovideo.jp') {
+        // blog: Shadow DOM ウィジェット対応のため能動走査。初回＋時限走査で初期表示分を拾い、
+        // 以後は observeRoot が「追加ノードのみ」観測する（全再走査しないので継続コストが軽い）。
+        observeRoot(document);
+        scanForButtons(document);
+        setTimeout(() => scanForButtons(document), 1500);
+        setTimeout(() => scanForButtons(document), 4000);
+    } else {
+        // live 等: サムネはライトDOMの <a><img>。ホバー起点＋直親<a>の軽量判定に戻す。
+        // SPA の常時 DOM 変化に反応しない（能動走査／全再走査のコストを避ける）。
+        document.addEventListener('mouseover', (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            const img = target.closest('img');
+            if (img && isTargetImage(img, true)) insertPopupButton(img, true);
+        });
+    }
 })
 
 
@@ -135,15 +165,24 @@ function resolveWatchUrl(anchorElement) {
 /**
  * 画像がニコ生番組リンク配下の対象画像か判定する（通常サムネ＋ニコニ広告サムネ）
  * @param {Element} imageElement
+ * @param {boolean} strictDirectParent  true=画像の直親が<a>のときだけ対象（live用・過剰付与を防ぐ）／
+ *                                       false=最寄り祖先の<a>まで許可（blog用・間に<div>等が挟まるため）
  * @returns {boolean}
  */
-function isTargetImage(imageElement) {
+function isTargetImage(imageElement, strictDirectParent) {
     // 自前で注入したボタンのアイコン画像(link.png)は対象外。
     // これを弾かないと、番組<a>配下にある自分のアイコンを再検出して入れ子注入が無限に続く
     if (imageElement.closest('.nicolive_link_button_wrap')) return false;
 
-    // 画像を包む最寄りのリンク(<a>)を取得（live は画像の直親、blog は間に <div> 等が挟まる）
-    const anchorElement = /** @type {HTMLAnchorElement} */ (imageElement.closest('a'));
+    // 画像を包むリンク(<a>)を取得。live は直親限定（過剰付与を防ぐ）、blog は間に <div> 等が
+    // 挟まるため最寄り祖先まで許可する。
+    let anchorElement = null;
+    if (strictDirectParent) {
+        const parent = imageElement.parentElement;
+        if (parent && parent.tagName === 'A') anchorElement = /** @type {HTMLAnchorElement} */ (parent);
+    } else {
+        anchorElement = /** @type {HTMLAnchorElement} */ (imageElement.closest('a'));
+    }
     if (!anchorElement || !anchorElement.href) return false;
 
     // 視聴ページURLを解決できるものだけ対象にする
@@ -153,9 +192,10 @@ function isTargetImage(imageElement) {
 /**
  * サムネイル画像に別窓ボタン・設定ボタンを挿入する
  * @param {Element} imageElement
+ * @param {boolean} strictDirectParent  isTargetImage に渡す判定モード（live=true / blog=false）
  */
-async function insertPopupButton(imageElement) {
-    if (!isTargetImage(imageElement)) return;
+async function insertPopupButton(imageElement, strictDirectParent) {
+    if (!isTargetImage(imageElement, strictDirectParent)) return;
 
     // URL解決は最寄りの <a>、ボタンの挿入・配置は画像の入れ物（直親）を基準にする。
     // live は入れ物＝<a> だが、blog は <a><div><img>… のように間に要素が挟まる
