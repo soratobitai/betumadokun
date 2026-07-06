@@ -11,6 +11,39 @@ declare namespace chrome {
     namespace runtime {
         /** 拡張同梱リソースの絶対URLを返す */
         function getURL(path: string): string;
+
+        /** 直近の拡張API呼び出しのエラー（無ければ undefined） */
+        const lastError: { message?: string } | undefined;
+
+        /** 拡張内メッセージ送信（レスポンスコールバックは任意） */
+        function sendMessage(message: any, responseCallback?: (response: any) => void): void;
+
+        const onMessage: {
+            addListener(
+                callback: (
+                    message: any,
+                    sender: { tab?: { id?: number; windowId?: number; url?: string } },
+                    sendResponse: (response?: any) => void
+                ) => void | boolean
+            ): void;
+        };
+    }
+
+    namespace windows {
+        interface Tab {
+            url?: string;
+            pendingUrl?: string;
+        }
+        interface Window {
+            id?: number;
+            /** 'normal' | 'popup' など */
+            type?: string;
+            tabs?: Tab[];
+        }
+        /** 全ウィンドウを取得（populate:true でタブ情報も含む） */
+        function getAll(getInfo?: { populate?: boolean }): Promise<Window[]>;
+        /** ウィンドウを更新（focused:true で前面化） */
+        function update(windowId: number, updateInfo: { focused?: boolean }): Promise<Window>;
     }
 
     namespace storage {
