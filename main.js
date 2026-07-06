@@ -61,8 +61,8 @@ const upgradeWatched = new WeakSet();
 /** @param {ParentNode} node */
 function scanForButtons(node) {
     // 追加ノード自身が IMG のこともある
-    if (node instanceof Element && node.tagName === 'IMG' && isTargetImage(node, false)) {
-        insertPopupButton(node, false);
+    if (node instanceof Element && node.tagName === 'IMG' && isTargetImage(node)) {
+        insertPopupButton(node);
     }
     let all;
     try {
@@ -71,7 +71,7 @@ function scanForButtons(node) {
         return;
     }
     all.forEach((el) => {
-        if (el.tagName === 'IMG' && isTargetImage(el, false)) insertPopupButton(el, false);
+        if (el.tagName === 'IMG' && isTargetImage(el)) insertPopupButton(el);
         if (el.shadowRoot) {
             observeRoot(el.shadowRoot); // ウィジェットの Shadow を監視（後からの img 描画も拾う）
             scanForButtons(el.shadowRoot);
@@ -115,6 +115,7 @@ runWhenIdle(async () => {
     fetch(chrome.runtime.getURL('main.css')).then(r => r.text()).then(t => { mainCssText = t; }).catch(() => { });
 
     // 番組サムネにボタンを注入する（ページ種別で方式を分ける）。
+    // 対象判定は共通で柔軟（最寄り祖先<a>）＋小さすぎるサムネは insertPopupButton がサイズで除外。
     if (location.hostname === 'blog.nicovideo.jp') {
         // blog: Shadow DOM ウィジェット対応のため能動走査。初回＋時限走査で初期表示分を拾い、
         // 以後は observeRoot が「追加ノードのみ」観測する（全再走査しないので継続コストが軽い）。
@@ -123,13 +124,18 @@ runWhenIdle(async () => {
         setTimeout(() => scanForButtons(document), 1500);
         setTimeout(() => scanForButtons(document), 4000);
     } else {
-        // live 等: サムネはライトDOMの <a><img>。ホバー起点＋直親<a>の軽量判定に戻す。
-        // SPA の常時 DOM 変化に反応しない（能動走査／全再走査のコストを避ける）。
+        // live/www 等: ホバー起点で対象サムネにだけ注入（SPA の常時 DOM 変化に反応せず軽い）。
         document.addEventListener('mouseover', (event) => {
             const target = event.target;
             if (!(target instanceof Element)) return;
+            // 通常サムネ（<img> 起点）
             const img = target.closest('img');
-            if (img && isTargetImage(img, true)) insertPopupButton(img, true);
+            if (img && isTargetImage(img)) { insertPopupButton(img); return; }
+            // 背景画像サムネ（<img> を持たない watch/lv リンク。例: www の /my タイムライン）
+            const anchor = /** @type {HTMLAnchorElement|null} */ (target.closest('a'));
+            if (anchor && !anchor.querySelector('img') && resolveWatchUrl(anchor) !== null) {
+                insertPopupButtonForLink(anchor);
+            }
         });
     }
 })
@@ -162,27 +168,30 @@ function resolveWatchUrl(anchorElement) {
     return null;
 }
 
+// サムネが小さすぎるとボタン(右上・約30px)で画像が隠れてしまうため、実寸がこれ未満の
+// サムネにはボタンを付けない。値はチューニング可能（16:9 の小サムネ ~64x36 を除外し、
+// ~96x54 以上を許可する目安）。
+const MIN_THUMB_W = 80;
+const MIN_THUMB_H = 45;
+/** @type {WeakSet<Element>} 小さすぎて対象外と判定した画像（毎ホバーの再測定を避ける） */
+const tooSmallImages = new WeakSet();
+/** @type {WeakSet<Element>} 背景画像サムネのリンクで処理済み（毎ホバーの再走査を避ける） */
+const processedLinks = new WeakSet();
+
 /**
  * 画像がニコ生番組リンク配下の対象画像か判定する（通常サムネ＋ニコニ広告サムネ）
+ * ※ 構造（直親/ネスト）では絞らず柔軟に検出する。小さすぎるサムネの除外は
+ *   insertPopupButton 側のサイズ判定で行う。
  * @param {Element} imageElement
- * @param {boolean} strictDirectParent  true=画像の直親が<a>のときだけ対象（live用・過剰付与を防ぐ）／
- *                                       false=最寄り祖先の<a>まで許可（blog用・間に<div>等が挟まるため）
  * @returns {boolean}
  */
-function isTargetImage(imageElement, strictDirectParent) {
+function isTargetImage(imageElement) {
     // 自前で注入したボタンのアイコン画像(link.png)は対象外。
     // これを弾かないと、番組<a>配下にある自分のアイコンを再検出して入れ子注入が無限に続く
     if (imageElement.closest('.nicolive_link_button_wrap')) return false;
 
-    // 画像を包むリンク(<a>)を取得。live は直親限定（過剰付与を防ぐ）、blog は間に <div> 等が
-    // 挟まるため最寄り祖先まで許可する。
-    let anchorElement = null;
-    if (strictDirectParent) {
-        const parent = imageElement.parentElement;
-        if (parent && parent.tagName === 'A') anchorElement = /** @type {HTMLAnchorElement} */ (parent);
-    } else {
-        anchorElement = /** @type {HTMLAnchorElement} */ (imageElement.closest('a'));
-    }
+    // 画像を包む最寄りのリンク(<a>)を取得（live/blog/www いずれも間に <div> 等が挟まりうる）
+    const anchorElement = /** @type {HTMLAnchorElement} */ (imageElement.closest('a'));
     if (!anchorElement || !anchorElement.href) return false;
 
     // 視聴ページURLを解決できるものだけ対象にする
@@ -192,19 +201,27 @@ function isTargetImage(imageElement, strictDirectParent) {
 /**
  * サムネイル画像に別窓ボタン・設定ボタンを挿入する
  * @param {Element} imageElement
- * @param {boolean} strictDirectParent  isTargetImage に渡す判定モード（live=true / blog=false）
  */
-async function insertPopupButton(imageElement, strictDirectParent) {
-    if (!isTargetImage(imageElement, strictDirectParent)) return;
+async function insertPopupButton(imageElement) {
+    if (!isTargetImage(imageElement)) return;
 
     // URL解決は最寄りの <a>、ボタンの挿入・配置は画像の入れ物（直親）を基準にする。
-    // live は入れ物＝<a> だが、blog は <a><div><img>… のように間に要素が挟まる
+    // live は入れ物＝<a> のことが多いが、blog/www は <a><div><img>… のように間に要素が挟まる
     const anchorElement = /** @type {HTMLAnchorElement} */ (imageElement.closest('a'));
     const containerElement = /** @type {HTMLElement} */ (imageElement.parentElement);
     if (!anchorElement || !containerElement) return;
 
     // ボタンが既にある場合はスルー（画像の入れ物単位で判定）
     if (containerElement.querySelector('.nicolive_link_button_wrap')) return;
+
+    // サムネが小さすぎるとボタンで画像が隠れてしまうので付けない（実寸で判定）。
+    // 未レイアウト等でサイズ0のときは判定を保留＝許可する（誤って隠さないため）。
+    if (tooSmallImages.has(imageElement)) return;
+    const rect = imageElement.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0 && (rect.width < MIN_THUMB_W || rect.height < MIN_THUMB_H)) {
+        tooSmallImages.add(imageElement);
+        return;
+    }
 
     // Shadow DOM 内なら、その root に main.css を注入（ライトDOMは content_scripts で適用済み）
     ensureStylesInRoot(containerElement.getRootNode());
@@ -227,6 +244,69 @@ async function insertPopupButton(imageElement, strictDirectParent) {
 
     // クリックイベントなど追加（URLはアンカー、ボタン走査・ホバーは入れ物）
     addActions(anchorElement, containerElement);
+}
+
+/**
+ * <img> を持たないリンク内で、背景画像(background-image)のサムネ枠要素を返す（無ければ null）。
+ * 重なり合うレイヤ構造（背景ぼかし＋前面サムネ）に備え、最大の背景画像要素から同サイズの
+ * 祖先まで遡って「枠」を容器として返す（ボタンがレイヤに隠れないように）。
+ * @param {HTMLAnchorElement} anchorElement
+ * @returns {HTMLElement|null}
+ */
+function findThumbnailBox(anchorElement) {
+    /** @type {HTMLElement|null} */
+    let best = null;
+    let bestArea = 0;
+    anchorElement.querySelectorAll('*').forEach((el) => {
+        const bg = getComputedStyle(el).backgroundImage;
+        if (!bg || bg === 'none' || bg.indexOf('url') === -1) return;
+        const r = el.getBoundingClientRect();
+        const area = r.width * r.height;
+        if (area > bestArea) { bestArea = area; best = /** @type {HTMLElement} */ (el); }
+    });
+    if (!best) return null;
+
+    // best と同サイズの祖先（＝サムネ枠）まで遡る。枠を容器にするとレイヤの上にボタンを置ける。
+    const br = best.getBoundingClientRect();
+    let box = best;
+    for (let p = best.parentElement; p && p !== anchorElement; p = p.parentElement) {
+        const pr = p.getBoundingClientRect();
+        if (Math.abs(pr.width - br.width) <= 4 && Math.abs(pr.height - br.height) <= 4) {
+            box = /** @type {HTMLElement} */ (p);
+        } else {
+            break;
+        }
+    }
+    return box;
+}
+
+/**
+ * <img> を持たない watch/lv リンク（背景画像サムネ。例: www の /my タイムライン）に
+ * 別窓ボタン・設定ボタンを付ける。サムネ枠を容器にし、サイズ足切りも枠で判定する。
+ * @param {HTMLAnchorElement} anchorElement
+ */
+function insertPopupButtonForLink(anchorElement) {
+    if (processedLinks.has(anchorElement)) return;
+    if (anchorElement.querySelector('.nicolive_link_button_wrap')) return;
+
+    const box = findThumbnailBox(anchorElement);
+    if (!box) { processedLinks.add(anchorElement); return; } // サムネ枠が無い（テキストのみ等）→対象外
+
+    // 小さすぎるサムネはボタンで隠れるので付けない（枠の実寸で判定）
+    const rect = box.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0 && (rect.width < MIN_THUMB_W || rect.height < MIN_THUMB_H)) {
+        processedLinks.add(anchorElement);
+        return;
+    }
+    processedLinks.add(anchorElement);
+
+    ensureStylesInRoot(box.getRootNode());
+    anchorElement.classList.add('nicolive_thumb_host'); // CSS の :hover 表示用の印
+    box.insertAdjacentHTML('beforeend', linkButton + settingsButton);
+    placementObserver.observe(box);
+    // 枠を絶対配置の基準に（静的配置のときだけ relative にして既存レイアウトを壊さない）
+    if (getComputedStyle(box).position === 'static') box.style.position = 'relative';
+    addActions(anchorElement, box);
 }
 
 /**
