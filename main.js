@@ -698,76 +698,65 @@ function openSettingsModal() {
                     <form id="nicolive_settings_form">
                         <div class="nicolive_modal_section">
                             <h3>別窓モード</h3>
-                            <div class="nicolive_option_item">
-                                <label>
+                            <div class="nicolive_seg" role="radiogroup">
+                                <label class="nicolive_seg_item">
                                     <input type="radio" name="windowmode" value="1">
-                                    <span class="nicolive_label_text">シングル</span>
+                                    <span class="nicolive_seg_btn">シングル</span>
+                                    <span class="nicolive_seg_item_desc">ウィンドウは常に１つで、新しく開かれた番組は常にこのウィンドウに表示されます。</span>
                                 </label>
-                                <p class="nicolive_option_desc">ウィンドウは常に１つで、新しく開かれた番組は常にこのウィンドウに表示されます。</p>
-                            </div>
-                            <div class="nicolive_option_item">
-                                <label>
+                                <label class="nicolive_seg_item">
                                     <input type="radio" name="windowmode" value="2">
-                                    <span class="nicolive_label_text">多窓</span>
+                                    <span class="nicolive_seg_btn">多窓</span>
+                                    <span class="nicolive_seg_item_desc">常に新しいウィンドウで番組が開かれます。</span>
                                 </label>
-                                <p class="nicolive_option_desc">常に新しいウィンドウで番組が開かれます。</p>
-                            </div>
-                            <div class="nicolive_option_item">
-                                <label>
+                                <label class="nicolive_seg_item">
                                     <input type="radio" name="windowmode" value="3">
-                                    <span class="nicolive_label_text">タブ</span>
+                                    <span class="nicolive_seg_btn">タブ</span>
+                                    <span class="nicolive_seg_item_desc">新しいタブで番組が開かれます。（別ウィンドウは開かれません）</span>
                                 </label>
-                                <p class="nicolive_option_desc">新しいタブで番組が開かれます。（別ウィンドウは開かれません）</p>
                             </div>
                         </div>
 
                         <div class="nicolive_modal_section">
                             <h3>映像モード</h3>
                             <p class="nicolive_section_desc">別窓で開かれた番組の表示方法を指定します。（タブ表示の場合は適応されません）</p>
-                            <div class="nicolive_option_item">
-                                <label>
+                            <div class="nicolive_seg" role="radiogroup">
+                                <label class="nicolive_seg_item">
                                     <input type="radio" name="screenmode" value="1">
-                                    <span class="nicolive_label_text">シンプル</span>
+                                    <span class="nicolive_seg_btn">シンプル</span>
+                                    <span class="nicolive_seg_item_desc">ライブ映像のみのシンプルな表示。コメントはできません。</span>
                                 </label>
-                                <p class="nicolive_option_desc">ライブ映像のみのシンプルな表示。コメントはできません。</p>
-                            </div>
-                            <div class="nicolive_option_item">
-                                <label>
+                                <label class="nicolive_seg_item">
                                     <input type="radio" name="screenmode" value="2">
-                                    <span class="nicolive_label_text">多機能</span>
+                                    <span class="nicolive_seg_btn">多機能</span>
+                                    <span class="nicolive_seg_item_desc">コメントやニコ生の標準機能が利用できます。<br><strong>ニコ生の画面設定「フルスクリーンサイズ」を「ブラウザサイズ」に設定してください。</strong>「モニタサイズ」設定の場合は別窓になりません。</span>
                                 </label>
-                                <p class="nicolive_option_desc">
-                                    コメントやニコ生の標準機能が利用できます。<br>
-                                    <strong>ニコ生の画面設定「フルスクリーンサイズ」を「ブラウザサイズ」に設定してください。</strong>
-                                    「モニタサイズ」設定の場合は別窓になりません。
-                                </p>
                             </div>
                         </div>
 
                         <div class="nicolive_modal_section">
                             <h3>別窓サイズ</h3>
-                            <p class="nicolive_section_desc">別窓ウィンドウのサイズを指定できます。</p>
-                            <div class="nicolive_size_inputs">
-                                <div class="nicolive_size_input_row">
-                                    <label>幅</label>
-                                    <input type="text" name="window_w" class="nicolive_size_input">
-                                </div>
-                                <div class="nicolive_size_input_row">
-                                    <label>高さ</label>
+                            <div class="nicolive_size_input_row">
+                                <span class="nicolive_size_label">幅</span>
+                                <input type="text" name="window_w" class="nicolive_size_input">
+                                <span class="nicolive_size_label">高さ</span>
+                                <span class="nicolive_size_height_group">
                                     <input type="text" name="window_h" class="nicolive_size_input">
-                                    <button type="button" id="nicolive_aspect_button">アスペクト比16:9に設定</button>
-                                </div>
+                                    <button type="button" id="nicolive_aspect_button" title="幅を基準に高さを16:9比率へ設定">16:9</button>
+                                </span>
                             </div>
                         </div>
 
                         <div class="nicolive_modal_section">
                             <h3>表示オプション</h3>
-                            <div class="nicolive_checkbox_item">
-                                <label>
+                            <div class="nicolive_options">
+                                <label class="nicolive_checkbox_item">
                                     <input type="checkbox" name="alwaysOnTop">
-                                    <span class="nicolive_label_text">別窓を常に手前に表示</span>
+                                    <span class="nicolive_option_body">
+                                        <span class="nicolive_label_text">別窓を常に手前に表示</span>
+                                        <span class="nicolive_option_desc">元のページをクリックしても、別窓が常に前面に表示されます。</span>
+                                    </span>
                                 </label>
-                                <p class="nicolive_option_desc">元のページをクリックしても、別窓が常に前面に表示されます。</p>
                             </div>
                         </div>
                     </form>
