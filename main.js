@@ -168,6 +168,18 @@ function resolveWatchUrl(anchorElement) {
     return null;
 }
 
+/**
+ * ニコニ広告フレームのカードか判定する（カードの <a> href が広告リダイレクト api.nicoad）。
+ * 広告枠は右上にフレーム装飾があり別窓ボタンが隠れる（装飾は祖先 article 側のため
+ * isTopRightOccupied では検知できない）。この場合は配置を右辺中央へ寄せる。
+ * @param {Element|null} cardEl カード全体（番組リンク <a>）
+ * @returns {boolean}
+ */
+function isNicoadCard(cardEl) {
+    const href = cardEl && /** @type {HTMLAnchorElement} */ (cardEl).href;
+    return !!href && href.includes('api.nicoad.nicovideo.jp');
+}
+
 // サムネが小さすぎるとボタン(右上・約30px)で画像が隠れてしまうため、実寸がこれ未満の
 // サムネにはボタンを付けない。値はチューニング可能（16:9 の小サムネ ~64x36 を除外し、
 // ~96x54 以上を許可する目安）。
@@ -352,7 +364,10 @@ const placementObserver = new IntersectionObserver((entries) => {
         const container = /** @type {HTMLElement} */ (entry.target);
         const card = container.closest('a');
         const wrap = /** @type {HTMLElement} */ (container.querySelector('.nicolive_link_button_wrap'));
-        if (wrap && card && isTopRightOccupied(container, card)) {
+        if (!wrap || !card) return;
+        // ニコニ広告フレームは右上にフレーム装飾があり別窓ボタンが隠れるため、常に右辺中央へ配置する。
+        // それ以外は「右上がカード外の要素で覆われている時」だけ中央へ退避する。
+        if (isNicoadCard(card) || isTopRightOccupied(container, card)) {
             wrap.classList.add('nicolive_link_button_wrap_center');
         }
     });
