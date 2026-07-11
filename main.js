@@ -431,6 +431,29 @@ let alwaysOnTopEventHandlers = [];
 
 let lastRaiseTime = 0;
 
+// mousedown がテキスト入力・操作系の要素上で起きたか。
+// コメント欄などをクリックした瞬間に別窓を前面化するとフォーカスが奪われて入力できないため、
+// その場合は前面化しない。Shadow DOM 内のコメント欄でも実要素を拾えるよう composedPath() を走査する
+// （window レベルでは e.target が shadow host に retarget され判定漏れするため）。
+/**
+ * @param {Event} e
+ * @returns {boolean}
+ */
+function isEditableClick(e) {
+    const path = (typeof e.composedPath === 'function') ? e.composedPath() : [];
+    const nodes = path.length ? path : (e.target ? [e.target] : []);
+    for (const n of nodes) {
+        if (!(n instanceof HTMLElement)) continue;
+        const tag = n.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return true;
+        if (n.isContentEditable) return true;
+        // ニコ生のコメント欄が div[role="textbox"] 等の可能性に備える
+        const role = n.getAttribute('role');
+        if (role === 'textbox' || role === 'combobox' || role === 'searchbox') return true;
+    }
+    return false;
+}
+
 function startAlwaysOnTopMonitoring() {
     if (alwaysOnTopEventHandlers.length > 0) return; // 既に開始済み
 
@@ -439,8 +462,12 @@ function startAlwaysOnTopMonitoring() {
     //   フォーカス争奪・ループ・親ページ操作不能の主因で、gesture 裏付けも弱く focus() が通りにくい。
     //   mousedown はユーザー操作(gesture)内で同期実行でき focus() が通りやすく、余計な再フォーカスも減る。
     // ・leading-edge スロットルで連続操作時の focus() storm を防ぐ（同期のまま＝gesture を維持）。
-    const handler = () => {
+    // ・入力系要素（コメント欄など）のクリックでは前面化しない。別窓内なら別窓自身がフォーカス窓の
+    //   ままなので前面を保ったまま入力でき、親ページなら入力を奪わず打てる（入力中のみ別窓は一時背面）。
+    /** @param {Event} e */
+    const handler = (e) => {
         if (!options.alwaysOnTop) return;
+        if (isEditableClick(e)) return;
         const now = Date.now();
         if (now - lastRaiseTime < 150) return;
         lastRaiseTime = now;
