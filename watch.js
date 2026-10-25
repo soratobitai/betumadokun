@@ -43,7 +43,8 @@ function hideLoadingScreen() {
 
 document.addEventListener('DOMContentLoaded', function () {
     
-    if (params.get('popup') === 'on') {
+    // 軽量（screenmode=3）は lite.js が公式ページを止めて自前の画面を作るので、ここでは何もしない
+    if (params.get('popup') === 'on' && params.get('screenmode') !== '3') {
         // ローディング画面を表示
         showLoadingScreen();
 

@@ -4,19 +4,21 @@
  * 拡張の設定値
  * @typedef {Object} Options
  * @property {string} windowmode  別窓モード '1'=シングル / '2'=多窓 / '3'=タブ
- * @property {string} screenmode  映像モード '1'=シンプル / '2'=多機能
+ * @property {string} screenmode  映像モード '1'=シンプル / '2'=多機能 / '3'=軽量
  * @property {number|string} window_w  別窓の幅(px)。既定は数値、フォーム入力経由では文字列
  * @property {number|string} window_h  別窓の高さ(px)。既定は数値、フォーム入力経由では文字列
  * @property {boolean} alwaysOnTop  別窓を常に手前に表示するか
+ * @property {boolean} liteComments  軽量モードで映像の上にコメントを流すか（lite.js が読む）
  */
 
 /** @type {Options} */
 let defaultOptions = {
     windowmode: '2',
-    screenmode: '1',
+    screenmode: '3',
     window_w: 500,
     window_h: 281,
     alwaysOnTop: false,
+    liteComments: false,
 };
 let options = /** @type {Options} */ ({});
 const linkIconURL = chrome.runtime.getURL('images/link.png');
@@ -468,6 +470,8 @@ function startAlwaysOnTopMonitoring() {
     const handler = (e) => {
         if (!options.alwaysOnTop) return;
         if (isEditableClick(e)) return;
+        // 設定ダイアログを開いている間は前面化しない（別窓がダイアログに重なって操作しづらくなるため）
+        if (document.getElementById(SETTINGS_HOST_ID)) return;
         const now = Date.now();
         if (now - lastRaiseTime < 150) return;
         lastRaiseTime = now;
@@ -687,6 +691,7 @@ chrome.storage.onChanged.addListener(function (changes) {
     if (changes.screenmode) options.screenmode = changes.screenmode.newValue;
     if (changes.window_w) options.window_w = changes.window_w.newValue;
     if (changes.window_h) options.window_h = changes.window_h.newValue;
+    if (changes.liteComments) options.liteComments = changes.liteComments.newValue;
     if (changes.alwaysOnTop) {
         options.alwaysOnTop = changes.alwaysOnTop.newValue;
         // オプションの変更に応じてモニタリングを開始/停止
@@ -705,100 +710,139 @@ const getOptions = async () => {
     return /** @type {Options} */ ({ ...defaultOptions, ...stored });
 };
 
-// 設定モーダルを開く
+// ===== 設定ダイアログ =====
+// 各サイト（live / www / blog / ちくわちゃん）の CSS に崩されないよう Shadow DOM に入れ、
+// <dialog>（最前面に表示・Esc で閉じる）で開く。見た目は settings.css。
+
+const SETTINGS_HOST_ID = 'betsumado_settings_host';
+
+/** 設定ダイアログで使うアイコン */
+const SETTINGS_ICON = {
+    logo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="13" height="10" rx="2"/><path d="M8 18h11a2 2 0 0 0 2-2V9"/></svg>',
+    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    check: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9.2l2.6 2.6L13 6.4"/></svg>',
+    info: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.2v3.8M8 5h.01"/></svg>',
+};
+
+/** 選択カードの絵柄（44×30）。.bm-fill は手前の窓をカードの背景色で塗って重なりを表す */
+const SETTINGS_PICT = {
+    single: '<rect x="9" y="4" width="26" height="22" rx="3"/><path d="M9 10h26"/>',
+    multi: '<rect x="5" y="3" width="22" height="17" rx="2.5"/><path d="M5 8h22"/><rect class="bm-fill" x="17" y="10" width="22" height="17" rx="2.5"/><path d="M17 15h22"/>',
+    tab: '<rect x="5" y="4" width="34" height="22" rx="2.5"/><path d="M5 11h34"/><path d="M9 11V8.2A1.2 1.2 0 0 1 10.2 7h8.6A1.2 1.2 0 0 1 20 8.2V11"/><path d="M22.5 11V8.2A1.2 1.2 0 0 1 23.7 7h7.6A1.2 1.2 0 0 1 32.5 8.2V11" opacity=".45"/>',
+    lite: '<rect x="6" y="4" width="32" height="22" rx="3"/><path d="M24 8.5l-6 7.5h5l-2 5.5 6-7.5h-5z" fill="currentColor" stroke="none"/>',
+    simple: '<rect x="6" y="4" width="32" height="22" rx="3"/><path d="M19.5 10.5v9l7.5-4.5z" fill="currentColor" stroke="none"/>',
+    full: '<rect x="6" y="4" width="32" height="22" rx="3"/><path d="M12 10.5h11M17 15h15M11 19.5h9"/>',
+};
+
+/**
+ * 選択カード（ラジオ）の HTML
+ * @param {string} name
+ * @param {string} value
+ * @param {string} pict
+ * @param {string} label
+ * @param {string} desc
+ * @param {string} [badge]
+ */
+function settingsChoiceHtml(name, value, pict, label, desc, badge) {
+    return `
+        <label class="bm-choice">
+            <input type="radio" name="${name}" value="${value}">
+            <svg class="bm-pict" viewBox="0 0 44 30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${pict}</svg>
+            <span class="bm-choice-name">${label}${badge ? `<span class="bm-badge">${badge}</span>` : ''}</span>
+            <span class="bm-choice-desc">${desc}</span>
+            <span class="bm-check">${SETTINGS_ICON.check}</span>
+        </label>`;
+}
+
+// 設定ダイアログを開く
 function openSettingsModal() {
-    // 既にモーダルが存在する場合は削除
-    const existingModal = document.getElementById('nicolive_settings_modal');
-    if (existingModal) {
-        existingModal.remove();
-    }
+    document.getElementById(SETTINGS_HOST_ID)?.remove();
 
-    // モーダルを作成
-    const modalHTML = `
-        <div id="nicolive_settings_modal" class="nicolive_modal">
-            <div class="nicolive_modal_content">
-                <div class="nicolive_modal_header">
-                    <h2>別窓くん設定</h2>
-                    <span class="nicolive_modal_close">&times;</span>
-                </div>
-                <div class="nicolive_modal_body">
-                    <form id="nicolive_settings_form">
-                        <div class="nicolive_modal_section">
-                            <h3>別窓モード</h3>
-                            <div class="nicolive_seg" role="radiogroup">
-                                <label class="nicolive_seg_item">
-                                    <input type="radio" name="windowmode" value="1">
-                                    <span class="nicolive_seg_btn">シングル</span>
-                                    <span class="nicolive_seg_item_desc">ウィンドウは常に１つで、新しく開かれた番組は常にこのウィンドウに表示されます。</span>
-                                </label>
-                                <label class="nicolive_seg_item">
-                                    <input type="radio" name="windowmode" value="2">
-                                    <span class="nicolive_seg_btn">多窓</span>
-                                    <span class="nicolive_seg_item_desc">常に新しいウィンドウで番組が開かれます。</span>
-                                </label>
-                                <label class="nicolive_seg_item">
-                                    <input type="radio" name="windowmode" value="3">
-                                    <span class="nicolive_seg_btn">タブ</span>
-                                    <span class="nicolive_seg_item_desc">新しいタブで番組が開かれます。（別ウィンドウは開かれません）</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="nicolive_modal_section">
-                            <h3>映像モード</h3>
-                            <p class="nicolive_section_desc">別窓で開かれた番組の表示方法を指定します。（タブ表示の場合は適応されません）</p>
-                            <div class="nicolive_seg" role="radiogroup">
-                                <label class="nicolive_seg_item">
-                                    <input type="radio" name="screenmode" value="1">
-                                    <span class="nicolive_seg_btn">シンプル</span>
-                                    <span class="nicolive_seg_item_desc">ライブ映像のみのシンプルな表示。コメントはできません。</span>
-                                </label>
-                                <label class="nicolive_seg_item">
-                                    <input type="radio" name="screenmode" value="2">
-                                    <span class="nicolive_seg_btn">多機能</span>
-                                    <span class="nicolive_seg_item_desc">コメントやニコ生の標準機能が利用できます。<br><strong>ニコ生の画面設定「フルスクリーンサイズ」を「ブラウザサイズ」に設定してください。</strong>「モニタサイズ」設定の場合は別窓になりません。</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="nicolive_modal_section">
-                            <h3>別窓サイズ</h3>
-                            <div class="nicolive_size_input_row">
-                                <span class="nicolive_size_label">幅</span>
-                                <input type="text" name="window_w" class="nicolive_size_input">
-                                <span class="nicolive_size_label">高さ</span>
-                                <span class="nicolive_size_height_group">
-                                    <input type="text" name="window_h" class="nicolive_size_input">
-                                    <button type="button" id="nicolive_aspect_button" title="幅を基準に高さを16:9比率へ設定">16:9</button>
-                                </span>
-                            </div>
-                        </div>
-
-                        <div class="nicolive_modal_section">
-                            <h3>表示オプション</h3>
-                            <div class="nicolive_options">
-                                <label class="nicolive_checkbox_item">
-                                    <input type="checkbox" name="alwaysOnTop">
-                                    <span class="nicolive_option_body">
-                                        <span class="nicolive_label_text">別窓を常に手前に表示</span>
-                                        <span class="nicolive_option_desc">元のページをクリックしても、別窓が常に前面に表示されます。</span>
-                                    </span>
-                                </label>
-                            </div>
-                        </div>
-                    </form>
-                </div>
+    const host = document.createElement('div');
+    host.id = SETTINGS_HOST_ID;
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+        <link rel="stylesheet" href="${chrome.runtime.getURL('settings.css')}">
+        <dialog lang="ja" aria-labelledby="bm_title" tabindex="-1">
+            <div class="bm-header">
+                <span class="bm-logo">${SETTINGS_ICON.logo}</span>
+                <h2 class="bm-title" id="bm_title">別窓くん<small>設定</small></h2>
+                <button type="button" class="bm-close" aria-label="閉じる">${SETTINGS_ICON.close}</button>
             </div>
-        </div>
-    `;
+            <form class="bm-body" id="bm_form">
+                <div class="bm-section" role="radiogroup" aria-labelledby="bm_windowmode_title">
+                    <div class="bm-section-title" id="bm_windowmode_title">別窓モード</div>
+                    <div class="bm-choices">
+                        ${settingsChoiceHtml('windowmode', '1', SETTINGS_PICT.single, 'シングル', '1つの窓で番組を切り替え')}
+                        ${settingsChoiceHtml('windowmode', '2', SETTINGS_PICT.multi, '多窓', '番組ごとに新しい窓で開く')}
+                        ${settingsChoiceHtml('windowmode', '3', SETTINGS_PICT.tab, 'タブ', '新しいタブで開く')}
+                    </div>
+                    <div class="bm-note bm-note-info bm-note-tab">${SETTINGS_ICON.info}<span>タブで開くときは、映像モード・別窓サイズ・常に手前は使われません。</span></div>
+                </div>
+                <div class="bm-section bm-window-only" role="radiogroup" aria-labelledby="bm_screenmode_title">
+                    <div class="bm-section-title" id="bm_screenmode_title">映像モード</div>
+                    <div class="bm-choices">
+                        ${settingsChoiceHtml('screenmode', '3', SETTINGS_PICT.lite, '軽量', '映像を軽く再生。開くのが速く多窓向き', 'おすすめ')}
+                        ${settingsChoiceHtml('screenmode', '1', SETTINGS_PICT.simple, 'シンプル', '公式プレイヤーで映像だけを表示')}
+                        ${settingsChoiceHtml('screenmode', '2', SETTINGS_PICT.full, '多機能', 'コメントなどニコ生の機能が使える')}
+                    </div>
+                    <div class="bm-rows bm-lite-only">
+                        <label class="bm-row">
+                            <span class="bm-row-text">
+                                <span class="bm-row-label">コメントを流す<span class="bm-row-tag">軽量</span></span>
+                                <span class="bm-row-desc">映像の上にコメントを流します（表示のみ・オンにすると負荷が増えます）</span>
+                            </span>
+                            <input class="bm-switch" type="checkbox" role="switch" name="liteComments">
+                        </label>
+                    </div>
+                    <div class="bm-note bm-note-multi">${SETTINGS_ICON.info}<span>ニコ生の画面設定で「フルスクリーンサイズ」を「ブラウザサイズ」にしてください。「モニタサイズ」だと別窓になりません。</span></div>
+                </div>
+                <div class="bm-rows bm-window-only">
+                    <div class="bm-row">
+                        <span class="bm-row-text">
+                            <span class="bm-row-label">別窓サイズ</span>
+                            <span class="bm-row-desc">幅 × 高さ（px）</span>
+                        </span>
+                        <span class="bm-size">
+                            <input class="bm-size-input" type="text" inputmode="numeric" name="window_w" aria-label="幅">
+                            <span class="bm-size-x">×</span>
+                            <input class="bm-size-input" type="text" inputmode="numeric" name="window_h" aria-label="高さ">
+                            <button type="button" class="bm-ghost-btn" id="bm_aspect" title="幅に合わせて高さを16:9にします">16:9</button>
+                        </span>
+                    </div>
+                    <label class="bm-row">
+                        <span class="bm-row-text">
+                            <span class="bm-row-label">常に手前に表示</span>
+                            <span class="bm-row-desc">元のページを操作しても、別窓を前面に保ちます</span>
+                        </span>
+                        <input class="bm-switch" type="checkbox" role="switch" name="alwaysOnTop">
+                    </label>
+                </div>
+            </form>
+            <div class="bm-footer">
+                <span class="bm-saved">${SETTINGS_ICON.check}変更はすぐに保存されます</span>
+                <span>v${chrome.runtime.getManifest().version}</span>
+            </div>
+        </dialog>`;
+    (document.body || document.documentElement).appendChild(host);
 
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    const dialog = /** @type {HTMLDialogElement} */ (root.querySelector('dialog'));
+    initializeModalValues(root);
+    addModalEventListeners(root, dialog);
+    dialog.addEventListener('close', () => host.remove());
 
-    // モーダルの初期値を設定
-    initializeModalValues();
-
-    // イベントリスナーを追加
-    addModalEventListeners();
+    // スタイルを読み込んでから開く（素の見た目を一瞬でも見せない）
+    let shown = false;
+    const show = () => {
+        if (shown || !host.isConnected) return;
+        shown = true;
+        dialog.showModal();
+        dialog.focus(); // 最初のボタン（×）ではなくダイアログ自体にフォーカスする（Enter で誤って閉じないように）
+    };
+    const link = /** @type {HTMLLinkElement} */ (root.querySelector('link'));
+    link.addEventListener('load', show);
+    link.addEventListener('error', show);
+    setTimeout(show, 500);
 }
 
 // セレクタで input 要素を型付き取得するヘルパー
@@ -809,82 +853,98 @@ function openSettingsModal() {
  */
 const qInput = (root, selector) => /** @type {HTMLInputElement} */ (root.querySelector(selector));
 
-// モーダルの初期値を設定
-function initializeModalValues() {
+// ダイアログの初期値を設定
+/** @param {ShadowRoot} root */
+function initializeModalValues(root) {
     // 別窓モード
-    document.querySelectorAll('input[name="windowmode"]').forEach(input => {
+    root.querySelectorAll('input[name="windowmode"]').forEach(input => {
         const el = /** @type {HTMLInputElement} */ (input);
         el.checked = el.value === options.windowmode;
     });
 
     // 映像モード
-    document.querySelectorAll('input[name="screenmode"]').forEach(input => {
+    root.querySelectorAll('input[name="screenmode"]').forEach(input => {
         const el = /** @type {HTMLInputElement} */ (input);
         el.checked = el.value === options.screenmode;
     });
 
     // 別窓サイズ
-    qInput(document, 'input[name="window_w"]').value = String(options.window_w);
-    qInput(document, 'input[name="window_h"]').value = String(options.window_h);
+    qInput(root, 'input[name="window_w"]').value = String(options.window_w);
+    qInput(root, 'input[name="window_h"]').value = String(options.window_h);
 
-    // 表示オプション
-    qInput(document, 'input[name="alwaysOnTop"]').checked = options.alwaysOnTop;
+    // 常に手前・コメント（軽量）
+    qInput(root, 'input[name="alwaysOnTop"]').checked = options.alwaysOnTop;
+    qInput(root, 'input[name="liteComments"]').checked = options.liteComments;
+
+    syncModalState(root);
 }
 
-// モーダルのイベントリスナーを追加
-function addModalEventListeners() {
-    const modal = document.getElementById('nicolive_settings_modal');
-    const closeBtn = modal.querySelector('.nicolive_modal_close');
+// 選択に応じて補足（多機能の注意・タブでは使われない設定）を出し分ける（表示の切り替えは settings.css）
+/** @param {ShadowRoot} root */
+function syncModalState(root) {
+    const form = /** @type {HTMLFormElement} */ (root.getElementById('bm_form'));
+    form.dataset.windowmode = qInput(form, 'input[name="windowmode"]:checked')?.value || '';
+    form.dataset.screenmode = qInput(form, 'input[name="screenmode"]:checked')?.value || '';
+}
 
-    // 閉じるボタン
-    closeBtn.addEventListener('click', () => {
-        modal.remove();
+// ダイアログのイベントリスナーを追加
+/**
+ * @param {ShadowRoot} root
+ * @param {HTMLDialogElement} dialog
+ */
+function addModalEventListeners(root, dialog) {
+    // 閉じるボタン（Esc はダイアログ標準で閉じる）
+    root.querySelector('.bm-close').addEventListener('click', () => dialog.close());
+
+    // 背景（ダイアログの外）をクリックしたら閉じる。中で押して外で離した（入力欄の文字選択など）ときは閉じない
+    let downOnBackdrop = false;
+    dialog.addEventListener('mousedown', (e) => {
+        downOnBackdrop = e.target === dialog;
+    });
+    dialog.addEventListener('click', (e) => {
+        if (downOnBackdrop && e.target === dialog) dialog.close();
     });
 
-    // モーダル外をクリックで閉じる
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            modal.remove();
-        }
+    // 変更はその場で保存する
+    const form = /** @type {HTMLFormElement} */ (root.getElementById('bm_form'));
+    form.addEventListener('change', () => {
+        syncModalState(root);
+        saveModalOptions(root);
     });
-
-    // フォームの変更を監視
-    const form = document.getElementById('nicolive_settings_form');
-    form.addEventListener('change', saveModalOptions);
+    form.addEventListener('submit', (e) => e.preventDefault()); // Enter でページが再読み込みされないように
 
     // サイズ入力のblurイベント
-    const window_w_input = qInput(document, 'input[name="window_w"]');
-    const window_h_input = qInput(document, 'input[name="window_h"]');
+    const window_w_input = qInput(root, 'input[name="window_w"]');
+    const window_h_input = qInput(root, 'input[name="window_h"]');
 
     window_w_input.addEventListener('blur', () => {
         window_w_input.value = String(convertInt(window_w_input.value, options.window_w));
-        saveModalOptions();
+        saveModalOptions(root);
     });
 
     window_h_input.addEventListener('blur', () => {
         window_h_input.value = String(convertInt(window_h_input.value, options.window_h));
-        saveModalOptions();
+        saveModalOptions(root);
     });
 
     // アスペクト比ボタン
-    const aspectButton = document.getElementById('nicolive_aspect_button');
-    aspectButton.addEventListener('click', () => {
+    root.getElementById('bm_aspect').addEventListener('click', () => {
         const width = Number(convertInt(window_w_input.value, options.window_w));
         const height = Math.round(width * (9 / 16));
         window_h_input.value = String(height);
-        saveModalOptions();
+        saveModalOptions(root);
     });
 }
 
-// モーダルの設定を保存
-async function saveModalOptions() {
-    const form = document.getElementById('nicolive_settings_form');
-    
-    options.windowmode = qInput(form, 'input[name="windowmode"]:checked').value;
-    options.screenmode = qInput(form, 'input[name="screenmode"]:checked').value;
-    options.window_w = qInput(form, 'input[name="window_w"]').value;
-    options.window_h = qInput(form, 'input[name="window_h"]').value;
-    options.alwaysOnTop = qInput(form, 'input[name="alwaysOnTop"]').checked;
+// ダイアログの設定を保存
+/** @param {ShadowRoot} root */
+async function saveModalOptions(root) {
+    options.windowmode = qInput(root, 'input[name="windowmode"]:checked').value;
+    options.screenmode = qInput(root, 'input[name="screenmode"]:checked').value;
+    options.window_w = qInput(root, 'input[name="window_w"]').value;
+    options.window_h = qInput(root, 'input[name="window_h"]').value;
+    options.alwaysOnTop = qInput(root, 'input[name="alwaysOnTop"]').checked;
+    options.liteComments = qInput(root, 'input[name="liteComments"]').checked;
 
     await chrome.storage.local.set(options);
 }

@@ -1,0 +1,577 @@
+/* 設定ダイアログ（main.js の openSettingsModal が Shadow DOM 内に読み込む）。
+   Shadow DOM で各サイト（live / www / blog / ちくわちゃん）の CSS から切り離し、どこでも同じ見た目にする。 */
+
+:host {
+    /* ページ側から継承される文字組み（www の line-break: anywhere など）を断ち切る。
+       外枠にはページの CSS が :host より優先されるが、!important は :host 側が勝つ */
+    all: initial !important;
+
+    --bm-bg: #ffffff;
+    --bm-surface: #f5f6f8;
+    --bm-card: #ffffff;
+    --bm-card-selected: #eef4ff;
+    --bm-border: #e2e5eb;
+    --bm-border-strong: #c9ced8;
+    --bm-text: #1b1d22;
+    --bm-text-2: #5d6270;
+    --bm-text-3: #8a8f9b;
+    --bm-accent: #2b6cf0;
+    --bm-accent-text: #1f58d6;
+    --bm-on-accent: #ffffff;
+    --bm-badge-bg: #e6efff;
+    --bm-warn-bg: #fff7e8;
+    --bm-warn-border: #f6d9a3;
+    --bm-warn-text: #7a4b00;
+    --bm-backdrop: rgba(12, 14, 20, 0.45);
+    --bm-shadow: 0 24px 64px rgba(16, 24, 40, 0.24), 0 2px 8px rgba(16, 24, 40, 0.08);
+}
+
+/* ダーク: ニコ生の表示テーマが「ダーク」、または「自動」で OS がダークのとき */
+:host-context(html[data-color-theme="dark"]) {
+    --bm-bg: #1d1f25;
+    --bm-surface: #25282f;
+    --bm-card: #23262d;
+    --bm-card-selected: #22304d;
+    --bm-border: #343843;
+    --bm-border-strong: #4a4f5c;
+    --bm-text: #eef0f4;
+    --bm-text-2: #a9aebb;
+    --bm-text-3: #7f8492;
+    --bm-accent: #5b8cff;
+    --bm-accent-text: #93b2ff;
+    --bm-on-accent: #0d1424;
+    --bm-badge-bg: #2a3a5e;
+    --bm-warn-bg: #33291a;
+    --bm-warn-border: #5c4823;
+    --bm-warn-text: #f3cd86;
+    --bm-backdrop: rgba(0, 0, 0, 0.6);
+    --bm-shadow: 0 24px 64px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+@media (prefers-color-scheme: dark) {
+    :host-context(html[data-color-theme="auto"]) {
+        --bm-bg: #1d1f25;
+        --bm-surface: #25282f;
+        --bm-card: #23262d;
+        --bm-card-selected: #22304d;
+        --bm-border: #343843;
+        --bm-border-strong: #4a4f5c;
+        --bm-text: #eef0f4;
+        --bm-text-2: #a9aebb;
+        --bm-text-3: #7f8492;
+        --bm-accent: #5b8cff;
+        --bm-accent-text: #93b2ff;
+        --bm-on-accent: #0d1424;
+        --bm-badge-bg: #2a3a5e;
+        --bm-warn-bg: #33291a;
+        --bm-warn-border: #5c4823;
+        --bm-warn-text: #f3cd86;
+        --bm-backdrop: rgba(0, 0, 0, 0.6);
+        --bm-shadow: 0 24px 64px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+/* ===== ダイアログ本体 ===== */
+
+dialog {
+    width: min(560px, calc(100vw - 32px));
+    max-height: calc(100vh - 48px);
+    padding: 0;
+    border: none;
+    border-radius: 16px;
+    background: var(--bm-bg);
+    color: var(--bm-text);
+    box-shadow: var(--bm-shadow);
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: auto-phrase; /* 日本語を文節で折り返す（「表／示」のような1文字だけの折り返しを防ぐ） */
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+}
+
+dialog[open] {
+    display: flex;
+    flex-direction: column;
+    animation: bm-in 0.18s ease-out;
+}
+
+dialog::backdrop {
+    background: var(--bm-backdrop);
+    animation: bm-fade 0.18s ease-out;
+}
+
+dialog:focus {
+    outline: none;
+}
+
+@keyframes bm-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.985); }
+}
+
+@keyframes bm-fade {
+    from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    dialog[open],
+    dialog::backdrop {
+        animation: none;
+    }
+}
+
+/* ===== ヘッダー ===== */
+
+.bm-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 16px 12px 20px;
+}
+
+.bm-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 9px;
+    background: var(--bm-accent);
+    color: var(--bm-on-accent);
+}
+
+.bm-logo svg {
+    width: 18px;
+    height: 18px;
+}
+
+.bm-title {
+    flex: 1;
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.bm-title small {
+    margin-left: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--bm-text-3);
+}
+
+.bm-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--bm-text-3);
+    cursor: pointer;
+    transition: background-color 0.12s, color 0.12s;
+}
+
+.bm-close:hover {
+    background: var(--bm-surface);
+    color: var(--bm-text);
+}
+
+.bm-close svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* ===== 本文 ===== */
+
+.bm-body {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 4px 20px 20px;
+    overflow-y: auto;
+}
+
+.bm-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    min-width: 0;
+    transition: opacity 0.15s;
+}
+
+.bm-section-title {
+    padding: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--bm-text-2);
+    letter-spacing: 0.02em;
+}
+
+/* ===== 選択カード（ラジオ） ===== */
+
+.bm-choices {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.bm-choice {
+    --bm-card-bg: var(--bm-card);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 12px 11px;
+    border: 1px solid var(--bm-border);
+    border-radius: 12px;
+    background: var(--bm-card-bg);
+    cursor: pointer;
+    transition: border-color 0.12s, background-color 0.12s, box-shadow 0.12s;
+}
+
+.bm-choice:hover {
+    border-color: var(--bm-border-strong);
+}
+
+.bm-choice:has(input:checked) {
+    --bm-card-bg: var(--bm-card-selected);
+    border-color: var(--bm-accent);
+    box-shadow: inset 0 0 0 1px var(--bm-accent);
+}
+
+.bm-choice:has(input:focus-visible) {
+    outline: 2px solid var(--bm-accent);
+    outline-offset: 2px;
+}
+
+/* ラジオ本体は見せない（カード全体が選択ボタン） */
+.bm-choice input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.bm-pict {
+    width: 44px;
+    height: 30px;
+    margin-bottom: 4px;
+    color: var(--bm-text-3);
+    transition: color 0.12s;
+}
+
+.bm-pict .bm-fill {
+    fill: var(--bm-card-bg);
+}
+
+.bm-choice:has(input:checked) .bm-pict {
+    color: var(--bm-accent);
+}
+
+.bm-choice-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--bm-text);
+}
+
+.bm-badge {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--bm-badge-bg);
+    color: var(--bm-accent-text);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1.5;
+}
+
+.bm-choice-desc {
+    font-size: 11.5px;
+    color: var(--bm-text-2);
+    line-height: 1.5;
+    text-wrap: balance; /* 2行のときは行の長さをそろえる */
+}
+
+/* 選択中の印（右上のチェック） */
+.bm-check {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--bm-accent);
+    color: var(--bm-on-accent);
+}
+
+.bm-check svg {
+    display: block;
+    width: 18px;
+    height: 18px;
+}
+
+.bm-choice:has(input:checked) .bm-check {
+    display: block;
+}
+
+/* ===== 補足（条件つきで表示） ===== */
+
+.bm-note {
+    display: none;
+    gap: 8px;
+    padding: 9px 12px;
+    border: 1px solid var(--bm-warn-border);
+    border-radius: 10px;
+    background: var(--bm-warn-bg);
+    color: var(--bm-warn-text);
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.bm-note svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.bm-note.bm-note-info {
+    border-color: var(--bm-border);
+    background: var(--bm-surface);
+    color: var(--bm-text-2);
+}
+
+/* 多機能を選んだときだけ、ニコ生側の設定の注意を出す */
+form[data-screenmode="2"] .bm-note-multi,
+/* タブを選んだときは、別窓にしか効かない設定を薄くして理由を出す */
+form[data-windowmode="3"] .bm-note-tab {
+    display: flex;
+}
+
+form[data-windowmode="3"] .bm-window-only {
+    opacity: 0.45;
+}
+
+/* 軽量以外を選んでいるときは、軽量専用の設定を薄くする */
+form:not([data-screenmode="3"]) .bm-lite-only {
+    opacity: 0.45;
+}
+
+/* ===== 設定行（サイズ・常に手前） ===== */
+
+.bm-rows {
+    border: 1px solid var(--bm-border);
+    border-radius: 12px;
+    background: var(--bm-surface);
+}
+
+.bm-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    padding: 10px 14px;
+}
+
+.bm-row + .bm-row {
+    border-top: 1px solid var(--bm-border);
+}
+
+.bm-row-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.bm-row-label {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--bm-text);
+}
+
+.bm-row-tag {
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--bm-badge-bg);
+    color: var(--bm-accent-text);
+    font-size: 10.5px;
+    font-weight: 700;
+    vertical-align: 1px;
+}
+
+.bm-row-desc {
+    font-size: 11.5px;
+    color: var(--bm-text-2);
+}
+
+/* 別窓サイズ: [幅] × [高さ] [16:9] */
+.bm-size {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.bm-size-input {
+    width: 64px;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--bm-border-strong);
+    border-radius: 8px;
+    background: var(--bm-bg);
+    color: var(--bm-text);
+    font: inherit;
+    font-size: 13.5px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.bm-size-input:focus {
+    border-color: var(--bm-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--bm-accent) 22%, transparent);
+}
+
+.bm-size-x {
+    color: var(--bm-text-3);
+    font-size: 12px;
+}
+
+.bm-ghost-btn {
+    height: 32px;
+    margin-left: 4px;
+    padding: 0 10px;
+    border: 1px solid var(--bm-border-strong);
+    border-radius: 8px;
+    background: var(--bm-bg);
+    color: var(--bm-accent-text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.12s, border-color 0.12s;
+}
+
+.bm-ghost-btn:hover {
+    border-color: var(--bm-accent);
+}
+
+.bm-ghost-btn:active {
+    background: var(--bm-card-selected);
+}
+
+/* 常に手前: スイッチ */
+.bm-switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 40px;
+    height: 24px;
+    margin: 0;
+    border-radius: 999px;
+    background: var(--bm-border-strong);
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    transition: background-color 0.15s;
+}
+
+.bm-switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    transition: transform 0.15s;
+}
+
+.bm-switch:checked {
+    background: var(--bm-accent);
+}
+
+.bm-switch:checked::after {
+    transform: translateX(16px);
+}
+
+.bm-switch:focus-visible {
+    outline: 2px solid var(--bm-accent);
+    outline-offset: 2px;
+}
+
+label.bm-row {
+    cursor: pointer;
+}
+
+/* ===== フッター ===== */
+
+.bm-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 20px;
+    border-top: 1px solid var(--bm-border);
+    color: var(--bm-text-3);
+    font-size: 11.5px;
+}
+
+.bm-saved {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.bm-saved svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* ===== 狭い画面（埋め込み枠内など） ===== */
+
+@media (max-width: 520px) {
+    .bm-choices {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .bm-choice {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        column-gap: 12px;
+        align-items: center;
+    }
+
+    .bm-pict {
+        grid-row: span 2;
+        margin-bottom: 0;
+    }
+
+    .bm-row {
+        flex-wrap: wrap;
+    }
+}

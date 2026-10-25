@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "別窓くん（ニコ生 多窓サポート）",
     "description": "ニコニコ生放送の番組を別窓で開くためのChrome機能拡張です。",
-    "version": "1.8.1",
+    "version": "1.9.0",
     "author": "MynicoTools",
     "icons": {
         "16": "icons/icon16.png",
@@ -39,13 +39,31 @@
                 "watch.css"
             ],
             "run_at": "document_start"
+        },
+        {
+            "matches": [
+                "https://live.nicovideo.jp/watch/*"
+            ],
+            "include_globs": [
+                "*popup=on*screenmode=3*"
+            ],
+            "js": [
+                "lib/hls.min.js",
+                "lite-comments.js",
+                "lite.js"
+            ],
+            "css": [
+                "lite.css"
+            ],
+            "run_at": "document_start"
         }
     ],
     "web_accessible_resources": [
         {
             "resources": [
                 "images/*.png",
-                "main.css"
+                "main.css",
+                "settings.css"
             ],
             "matches": [
                 "https://*/*"
@@ -53,8 +71,18 @@
         }
     ],
     "permissions": [
-        "storage"
+        "storage",
+        "declarativeNetRequestWithHostAccess"
     ],
+    "declarative_net_request": {
+        "rule_resources": [
+            {
+                "id": "lite_csp",
+                "enabled": true,
+                "path": "rules.json"
+            }
+        ]
+    },
     "host_permissions": [
         "https://live.nicovideo.jp/*"
     ],

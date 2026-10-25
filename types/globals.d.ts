@@ -7,10 +7,37 @@ interface Window {
     focusOpenedWindows?: () => void;
 }
 
+/**
+ * lib/hls.min.js（UMD）が content script の global に定義する hls.js。
+ * 軽量モード（lite.js）が使う分だけ宣言する。
+ */
+declare class Hls {
+    constructor(config?: Record<string, any>);
+    static isSupported(): boolean;
+    static readonly Events: { MANIFEST_PARSED: string; ERROR: string };
+    static readonly ErrorTypes: { NETWORK_ERROR: string; MEDIA_ERROR: string };
+    /** 画質一覧（ビットレート昇順） */
+    readonly levels: { width: number; height: number; bitrate: number }[];
+    /** 自動画質選択の上限（levels の添字。-1 で上限なし） */
+    autoLevelCapping: number;
+    /** 再生位置の時刻（プレイリストの PROGRAM-DATE-TIME 由来。無ければ null） */
+    readonly playingDate: Date | null;
+    /** ライブの最新位置からの遅れ（秒） */
+    readonly latency: number;
+    loadSource(url: string): void;
+    attachMedia(media: HTMLMediaElement): void;
+    recoverMediaError(): void;
+    destroy(): void;
+    on(event: string, listener: (event: string, data: any) => void): void;
+}
+
 declare namespace chrome {
     namespace runtime {
         /** 拡張同梱リソースの絶対URLを返す */
         function getURL(path: string): string;
+
+        /** manifest.json の内容（使う項目だけ宣言） */
+        function getManifest(): { version: string };
 
         /** 直近の拡張API呼び出しのエラー（無ければ undefined） */
         const lastError: { message?: string } | undefined;

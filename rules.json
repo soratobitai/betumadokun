@@ -1,0 +1,22 @@
+[
+    {
+        "id": 1,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "responseHeaders": [
+                {
+                    "header": "Content-Security-Policy",
+                    "operation": "set",
+                    "value": "script-src 'none'; style-src 'none'; img-src https://nicolive.cdn.nimg.jp/relive/party1-static/images/common/; font-src 'none'; frame-src 'none'; object-src 'none'"
+                }
+            ]
+        },
+        "condition": {
+            "regexFilter": "^https://live\\.nicovideo\\.jp/watch/lv[0-9]+\\?.*popup=on.*screenmode=3",
+            "resourceTypes": [
+                "main_frame"
+            ]
+        }
+    }
+]
