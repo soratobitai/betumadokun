@@ -5,6 +5,13 @@
 interface Window {
     /** main.js が別窓から参照できるよう公開しているフォーカス関数 */
     focusOpenedWindows?: () => void;
+    /** Document Picture-in-Picture（Chrome 116+）。別窓モード「PiP」で使う分だけ宣言する */
+    documentPictureInPicture?: {
+        /** 開いている PiP の窓（無ければ null） */
+        readonly window: Window | null;
+        /** PiP の窓を開く（ユーザー操作の中でのみ） */
+        requestWindow(options?: { width?: number; height?: number }): Promise<Window>;
+    };
 }
 
 /**

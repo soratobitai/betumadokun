@@ -3,7 +3,7 @@
 /**
  * 拡張の設定値
  * @typedef {Object} Options
- * @property {string} windowmode  別窓モード '1'=シングル / '2'=多窓 / '3'=タブ
+ * @property {string} windowmode  別窓モード '1'=シングル / '2'=多窓 / '3'=タブ / '4'=PiP
  * @property {string} screenmode  映像モード '1'=シンプル / '2'=多機能 / '3'=軽量
  * @property {number|string} window_w  別窓の幅(px)。既定は数値、フォーム入力経由では文字列
  * @property {number|string} window_h  別窓の高さ(px)。既定は数値、フォーム入力経由では文字列
@@ -461,6 +461,8 @@ function isEditableClick(e) {
 // （別窓の中をクリックするたびに全別窓を前面化すると、クリックした窓の上に他の別窓が来てしまう）。
 // 別オリジンの枠からは判定できないが、その場合も SW 側で依頼元が別窓なら無視している。
 function isInsideOurPopup() {
+    // 自分自身（PiP に埋め込んだ軽量の画面など）か、最上位の文書が別窓か
+    if (/[?&]popup=on(&|$)/.test(location.search)) return true;
     try {
         return /[?&]popup=on(&|$)/.test(window.top.location.search);
     } catch (e) {
@@ -551,6 +553,62 @@ function refreshPopupCount() {
     } catch (e) { /* 拡張コンテキスト無効時は無視 */ }
 }
 
+// 別窓（ポップアップ）を開いて追跡する。開けたら true
+/**
+ * @param {string} url
+ * @param {string} name window.open の窓名（シングルは固定名で再利用、多窓は毎回新しい名前）
+ * @param {number} [position] 多窓で開く位置（左上からのずらし量）
+ * @returns {boolean}
+ */
+function openPopupWindow(url, name, position) {
+    const pos = position === undefined ? '' : `,top=${position},left=${position}`;
+    const win = window.open(url, name, `width=${options.window_w},height=${options.window_h}${pos},resizable=yes,location=no,toolbar=no,menubar=no`);
+    if (!win) return false;
+    trackOpenedWindow(win);
+    return true;
+}
+
+// ===== PiP（Document Picture-in-Picture） =====
+// 別窓モード「PiP」: 別窓ボタンのクリック（ユーザー操作）の中で PiP の窓を開き、その中に軽量の画面を埋め込む。
+// ・PiP は OS レベルで常に最前面。ただし開いたページ（一覧など）より長くは生きられず、そのページを移動したり
+//   閉じたりすると PiP も閉じる。
+// ・PiP は1つだけ。開いている間に別の番組のボタンを押したら、同じ PiP の中で番組を切り替える。
+// ・軽量の画面（live.nicovideo.jp）を埋め込めるよう、拡張の通信ルールで軽量の URL だけ X-Frame-Options を外している。
+//   ニコニコ（*.nicovideo.jp）以外のページからは埋め込めないので、そこでは普通の別窓で開く。
+
+// このページから PiP を開けるか（最上位の文書・API あり・ニコニコのページ）
+function canOpenPip() {
+    return window.top === window && !!window.documentPictureInPicture && /(^|\.)nicovideo\.jp$/.test(location.hostname);
+}
+
+// 軽量の画面を PiP で開く（開いていればその中で番組を切り替える）
+/** @param {string} url 軽量の画面の URL */
+function openInPip(url) {
+    const dpip = window.documentPictureInPicture;
+    const current = dpip.window;
+    if (current) {
+        const frame = current.document.querySelector('iframe');
+        if (frame) frame.src = url;
+        return;
+    }
+    // ユーザー操作の中で呼ぶ必要があるので、クリックの処理から直接呼ぶ
+    dpip.requestWindow({ width: Number(options.window_w) || 500, height: Number(options.window_h) || 281 })
+        .then((pip) => {
+            const doc = pip.document;
+            doc.title = '別窓くん';
+            doc.body.style.cssText = 'margin:0;background:#000;overflow:hidden';
+            const frame = doc.createElement('iframe');
+            frame.src = url;
+            frame.allow = 'autoplay; fullscreen';
+            frame.style.cssText = 'display:block;width:100vw;height:100vh;border:0';
+            doc.body.append(frame);
+        })
+        .catch(() => {
+            // PiP を開けなかった（環境の制限など）。ユーザー操作が残っていれば普通の別窓で開く
+            openPopupWindow(url, 'betsumado_single');
+        });
+}
+
 // 別窓を追跡リストに加え、閉じたら外す（シングル・多窓で共通）
 /** @param {Window} win */
 function trackOpenedWindow(win) {
@@ -593,29 +651,32 @@ function addActions(anchorElement, containerElement) {
         if (!options.alwaysOnTop) focusOpenedWindows();
 
         const url = `${liveUrl}?&popup=on&screenmode=${options.screenmode}`;
+        let openedPopup = false; // 別窓（ポップアップ）を開いたか。常に手前の前面化はそのときだけ
 
         // シングル（常に同じ名前の窓を再利用。閉じた窓は追跡側が外すので、ここでは足すだけ）
         if (options.windowmode === '1') {
-            const win = window.open(url, 'betsumado_single', `width=${options.window_w},height=${options.window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
-            if (win) trackOpenedWindow(win);
+            openedPopup = openPopupWindow(url, 'betsumado_single');
         }
         // 多窓（毎回新しい名前で開き、開いている別窓の数だけ位置をずらす）
         if (options.windowmode === '2') {
             const position = Math.max(popupCount, openedWindows.length) * windowPositionOffset;
-            const win = window.open(url, makePopupName(), `width=${options.window_w},height=${options.window_h},top=${position},left=${position},resizable=yes,location=no,toolbar=no,menubar=no`);
-            if (win) {
-                trackOpenedWindow(win);
-                popupCount++;
-            }
+            openedPopup = openPopupWindow(url, makePopupName(), position);
+            if (openedPopup) popupCount++;
         }
         // タブ
         if (options.windowmode === '3') {
             window.open(`${liveUrl}`);
         }
+        // PiP（中身は常に軽量。PiP を開けないページでは普通の別窓（シングル・軽量）で開く）
+        if (options.windowmode === '4') {
+            const liteUrl = `${liveUrl}?&popup=on&screenmode=3`;
+            if (canOpenPip()) openInPip(liteUrl);
+            else openedPopup = openPopupWindow(liteUrl, 'betsumado_single');
+        }
 
         // 常に手前: 新しい窓ができてから前面化を頼む（先に頼むと、古い別窓が新しい窓の上に来ることがある）。
         // SW は古い順に前面化するので、最後に新しい窓が最前面になる
-        if (options.alwaysOnTop && options.windowmode !== '3') {
+        if (options.alwaysOnTop && openedPopup) {
             startAlwaysOnTopMonitoring();
             setTimeout(focusOpenedWindows, 400);
         }
@@ -678,6 +739,7 @@ const SETTINGS_PICT = {
     lite: '<rect x="6" y="4" width="32" height="22" rx="3"/><path d="M24 8.5l-6 7.5h5l-2 5.5 6-7.5h-5z" fill="currentColor" stroke="none"/>',
     simple: '<rect x="6" y="4" width="32" height="22" rx="3"/><path d="M19.5 10.5v9l7.5-4.5z" fill="currentColor" stroke="none"/>',
     full: '<rect x="6" y="4" width="32" height="22" rx="3"/><path d="M12 10.5h11M17 15h15M11 19.5h9"/>',
+    pip: '<rect x="5" y="4" width="34" height="22" rx="2.5"/><rect x="22" y="14" width="14" height="9" rx="1.5" fill="currentColor" stroke="none"/>',
 };
 
 /**
@@ -718,16 +780,18 @@ function openSettingsModal() {
             <form class="bm-body" id="bm_form">
                 <div class="bm-section" role="radiogroup" aria-labelledby="bm_windowmode_title">
                     <div class="bm-section-title" id="bm_windowmode_title">別窓モード</div>
-                    <div class="bm-choices">
+                    <div class="bm-choices bm-choices-4">
                         ${settingsChoiceHtml('windowmode', '1', SETTINGS_PICT.single, 'シングル', '1つの窓で番組を切り替え')}
                         ${settingsChoiceHtml('windowmode', '2', SETTINGS_PICT.multi, '多窓', '番組ごとに新しい窓で開く')}
+                        ${settingsChoiceHtml('windowmode', '4', SETTINGS_PICT.pip, 'PiP', '一覧を見ながら最前面の小窓で')}
                         ${settingsChoiceHtml('windowmode', '3', SETTINGS_PICT.tab, 'タブ', '新しいタブで開く')}
                     </div>
                     <div class="bm-note bm-note-info bm-note-tab">${SETTINGS_ICON.info}<span>タブで開くときは、映像モード・別窓サイズ・常に手前は使われません。</span></div>
+                    <div class="bm-note bm-note-info bm-note-pip">${SETTINGS_ICON.info}<span>PiP は常に最前面に出る小窓で、中身は軽量です（1つだけ。別の番組を押すと切り替わります）。開いたページを移動したり閉じたりすると PiP も閉じます。ニコニコ以外のサイトでは普通の別窓で開きます。</span></div>
                 </div>
                 <div class="bm-section bm-window-only" role="radiogroup" aria-labelledby="bm_screenmode_title">
                     <div class="bm-section-title" id="bm_screenmode_title">映像モード</div>
-                    <div class="bm-choices">
+                    <div class="bm-choices bm-screen-cards">
                         ${settingsChoiceHtml('screenmode', '3', SETTINGS_PICT.lite, '軽量', '映像を軽く再生。開くのが速く多窓向き', 'おすすめ')}
                         ${settingsChoiceHtml('screenmode', '1', SETTINGS_PICT.simple, 'シンプル', '公式プレイヤーで映像だけを表示')}
                         ${settingsChoiceHtml('screenmode', '2', SETTINGS_PICT.full, '多機能', 'コメントなどニコ生の機能が使える')}
@@ -767,7 +831,7 @@ function openSettingsModal() {
                             <button type="button" class="bm-ghost-btn" id="bm_aspect" title="幅に合わせて高さを16:9にします">16:9</button>
                         </span>
                     </div>
-                    <label class="bm-row">
+                    <label class="bm-row bm-aot-row">
                         <span class="bm-row-text">
                             <span class="bm-row-label">常に手前に表示</span>
                             <span class="bm-row-desc">元のページを操作しても、別窓を前面に保ちます</span>

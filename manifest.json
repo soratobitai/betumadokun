@@ -47,6 +47,7 @@
             "include_globs": [
                 "*popup=on*screenmode=3*"
             ],
+            "all_frames": true,
             "js": [
                 "lib/hls.min.js",
                 "lite-comments.js",

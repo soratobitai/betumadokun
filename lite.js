@@ -19,12 +19,12 @@
     const programId = (pageUrl.pathname.match(/^\/watch\/(lv\d+)/) || [])[1];
     if (!programId) return;
 
-    // CSP が付いていない（公式のスクリプトが動いてしまう）ときは、すぐ通常表示に切り替える
-    if (!officialScriptsBlocked()) {
-        console.info('別窓くん（軽量）: スクリプト停止のルールが効いていないため通常表示に切り替えます');
-        location.replace(simpleModeUrl());
-        return;
-    }
+    // 通信ルールの CSP が効いているか（＝公式のスクリプトが止まっているか）は、公式のスクリプト・CSS の
+    // 読み込みがページの CSP でブロックされたときの通知（securitypolicyviolation）が来たかで確かめる（init で判定）。
+    // ※ content script からインラインスクリプトを差し込んで確かめる方法は、差し込んだスクリプトに拡張側の CSP が
+    //   かかって必ずブロックされ、判定にならないうえ拡張のエラー一覧に毎回エラーが残るので使わない。
+    let pageCspActive = false;
+    document.addEventListener('securitypolicyviolation', () => { pageCspActive = true; }, { once: true });
 
     const WATCH_URL = `https://live.nicovideo.jp/watch/${programId}`;
     /** 初回の再生開始までの猶予。過ぎたら通常表示へ切り替える */
@@ -91,9 +91,15 @@
     /** @type {ReturnType<typeof createLiteCommentLayer>} */
     let comments;
 
+    // PiP の窓に埋め込まれているか（別窓モード「PiP」）。埋め込み中は公式ページへ切り替えず、
+    // 普通の別窓で開き直す（公式ページは埋め込みを許可していないため）
+    const inFrame = window.top !== window;
+    /** 普通の別窓で開き直すときの大きさ（設定の別窓サイズ） */
+    const popupSize = { w: 500, h: 281 };
+
     const ACTION_RELOAD = { label: '再読み込み', onClick: () => restart() };
-    const ACTION_OFFICIAL = { label: '通常表示で開く', onClick: () => fallback('user') };
-    const ACTION_CLOSE = { label: '閉じる', onClick: () => window.close() };
+    const ACTION_OFFICIAL = { label: inFrame ? '別窓で開く' : '通常表示で開く', onClick: () => (inFrame ? openOfficialPopup() : fallback('user')) };
+    const ACTION_CLOSE = { label: '閉じる', onClick: () => (inFrame ? /** @type {Window} */ (window.top) : window).close() };
 
     // ===== 画面 =====
 
@@ -654,14 +660,26 @@
         if (comments) comments.setServer(null);
     }
 
-    // 従来のシンプル表示（公式プレイヤー）で開き直す
+    // 従来のシンプル表示（公式プレイヤー）で開き直す。PiP に埋め込まれているときは、その場で切り替えずに
+    // 「別窓で開く」を案内する（ポップアップはユーザーのクリックがないと開けないため）
     /** @param {string} reason */
     function fallback(reason) {
         if (fellBack) return;
         fellBack = true;
         console.info('別窓くん（軽量）: 通常表示に切り替えます', reason);
         teardown();
+        if (inFrame) {
+            stopped = true;
+            showMessage('この番組は軽量では再生できません', [ACTION_OFFICIAL, ACTION_CLOSE]);
+            return;
+        }
         location.replace(simpleModeUrl());
+    }
+
+    // 公式プレイヤー（シンプル表示）の普通の別窓で開き、PiP は閉じる（PiP に埋め込まれているとき用）
+    function openOfficialPopup() {
+        window.open(simpleModeUrl(), 'betsumado_single', `width=${popupSize.w},height=${popupSize.h},resizable=yes,location=no,toolbar=no,menubar=no`);
+        /** @type {Window} */ (window.top).close();
     }
 
     function simpleModeUrl() {
@@ -670,17 +688,22 @@
         return next.toString();
     }
 
-    // 公式のスクリプトが止まっているか（＝CSP が付いているか）を、ページにインラインスクリプトを入れて確かめる。
-    // 付いていればブロックされて実行されない（コンソールに CSP 違反が出るのは想定どおり）。
-    function officialScriptsBlocked() {
-        const root = document.documentElement;
-        const probe = document.createElement('script');
-        probe.textContent = 'document.documentElement.dataset.betsumadoLiteProbe = "ran";';
-        root.appendChild(probe);
-        probe.remove();
-        const ran = root.dataset.betsumadoLiteProbe === 'ran';
-        delete root.dataset.betsumadoLiteProbe;
-        return !ran;
+    // CSP 違反の通知を少しだけ待つ（通知は非同期に届くので、解析が終わった時点でまだ来ていないことがある）
+    /** @param {number} ms */
+    function waitForPageCsp(ms) {
+        return new Promise((resolve) => {
+            if (pageCspActive) {
+                resolve(undefined);
+                return;
+            }
+            const done = () => {
+                clearTimeout(timer);
+                document.removeEventListener('securitypolicyviolation', done);
+                resolve(undefined);
+            };
+            const timer = setTimeout(done, ms);
+            document.addEventListener('securitypolicyviolation', done);
+        });
     }
 
     // 窓を閉じる・シングルで別番組へ移るときは、席をすぐ空けるため視聴セッションを閉じる
@@ -690,7 +713,15 @@
     });
 
     // 公式 HTML の解析が終わったら（スクリプトは CSP で動かない）、番組情報を読んでから画面を差し替える
-    function init() {
+    async function init() {
+        // CSP が効いていない（公式のスクリプトが動いてしまう）ときは、通常表示に切り替える
+        await waitForPageCsp(1000);
+        if (!pageCspActive) {
+            console.info('別窓くん（軽量）: スクリプト停止のルールが効いていないため通常表示に切り替えます');
+            location.replace(simpleModeUrl());
+            return;
+        }
+
         /** @type {any} */
         let props = null;
         try {
@@ -703,10 +734,12 @@
         applySavedVolume();
 
         // 設定（画質・コメント）を読んでから視聴を始める。読めなくても既定値で始める
-        chrome.storage.local.get(['liteQuality', 'liteComments'])
+        chrome.storage.local.get(['liteQuality', 'liteComments', 'window_w', 'window_h'])
             .then((v) => {
                 qualityMode = v.liteQuality === 'site' ? 'site' : 'window';
                 setCommentsEnabled(v.liteComments === true);
+                popupSize.w = Number(v.window_w) || popupSize.w;
+                popupSize.h = Number(v.window_h) || popupSize.h;
             })
             .catch(() => { })
             .finally(() => start(props));

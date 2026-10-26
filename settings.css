@@ -229,6 +229,16 @@ dialog:focus {
     gap: 8px;
 }
 
+/* 別窓モードは4択（カードを少し詰める） */
+.bm-choices-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.bm-choices-4 .bm-choice {
+    padding: 11px 10px 10px;
+}
+
 .bm-choice {
     --bm-card-bg: var(--bm-card);
     position: relative;
@@ -363,7 +373,9 @@ dialog:focus {
 /* 多機能を選んだときだけ、ニコ生側の設定の注意を出す */
 form[data-screenmode="2"] .bm-note-multi,
 /* タブを選んだときは、別窓にしか効かない設定を薄くして理由を出す */
-form[data-windowmode="3"] .bm-note-tab {
+form[data-windowmode="3"] .bm-note-tab,
+/* PiP を選んだときは、PiP の注意を出す */
+form[data-windowmode="4"] .bm-note-pip {
     display: flex;
 }
 
@@ -371,8 +383,14 @@ form[data-windowmode="3"] .bm-window-only {
     opacity: 0.45;
 }
 
-/* 軽量以外を選んでいるときは、軽量専用の設定を薄くする */
-form:not([data-screenmode="3"]) .bm-lite-only {
+/* PiP は中身が常に軽量で、常に最前面に出るので、映像モードの選択と「常に手前」は使われない */
+form[data-windowmode="4"] .bm-screen-cards,
+form[data-windowmode="4"] .bm-aot-row {
+    opacity: 0.45;
+}
+
+/* 軽量以外を選んでいるときは、軽量専用の設定を薄くする（PiP は常に軽量なので薄くしない） */
+form:not([data-screenmode="3"]):not([data-windowmode="4"]) .bm-lite-only {
     opacity: 0.45;
 }
 
