@@ -111,7 +111,6 @@ runWhenIdle(async () => {
     // 前面化は SW が chrome.windows.getAll で別窓を特定して行うため、本ページが別窓を
     // 追跡していなくても（例：別番組へ移動した直後）本ページ操作で前面化を依頼できる。
     if (options.alwaysOnTop) startAlwaysOnTopMonitoring();
-    if (!isInsideOurPopup()) refreshPopupCount();
 
     // Shadow DOM 内にボタンを表示するため、注入用に main.css を先読みしておく
     fetch(chrome.runtime.getURL('main.css')).then(r => r.text()).then(t => { mainCssText = t; }).catch(() => { });
@@ -543,14 +542,39 @@ function makePopupName() {
     return 'betsumado_' + seq;
 }
 
-// いま開いている別窓の数を SW に数えてもらう（読み込み時と、別窓ボタンにカーソルを載せた時）
+/** 最後に SW へ別窓の数を問い合わせた時刻 */
+let popupCountAt = 0;
+
+// いま開いている別窓の数を SW に数えてもらう（多窓のときだけ、別窓ボタンにカーソルを載せた時）。
+// 問い合わせのたびに止まっている SW が起きるので、読み込み時には聞かず、続けて載せたときも間を空ける
 function refreshPopupCount() {
+    if (options.windowmode !== '2') return;
+    const now = Date.now();
+    if (now - popupCountAt < 2000) return;
+    popupCountAt = now;
     try {
         chrome.runtime.sendMessage({ type: 'COUNT_POPUPS' }, (n) => {
             void chrome.runtime.lastError;
             if (typeof n === 'number') popupCount = n;
         });
     } catch (e) { /* 拡張コンテキスト無効時は無視 */ }
+}
+
+// 別窓の URL（視聴ページの URL に、別窓の目印 popup=on と映像モードをこの順で付ける）。
+// 元の URL に #… や同じ名前のパラメータがあると、通信ルール・lite.js・watch.js の判定が食い違うので取り除く
+/**
+ * @param {string} liveUrl
+ * @param {string} screenmode
+ * @returns {string}
+ */
+function makePopupUrl(liveUrl, screenmode) {
+    const url = new URL(liveUrl);
+    url.hash = '';
+    url.searchParams.delete('popup');
+    url.searchParams.delete('screenmode');
+    url.searchParams.append('popup', 'on');
+    url.searchParams.append('screenmode', screenmode);
+    return url.toString();
 }
 
 // 別窓（ポップアップ）を開いて追跡する。開けたら true
@@ -587,8 +611,7 @@ function openInPip(url) {
     const dpip = window.documentPictureInPicture;
     const current = dpip.window;
     if (current) {
-        const frame = current.document.querySelector('iframe');
-        if (frame) frame.src = url;
+        showInPip(current, url);
         return;
     }
     // ユーザー操作の中で呼ぶ必要があるので、クリックの処理から直接呼ぶ
@@ -596,17 +619,73 @@ function openInPip(url) {
         .then((pip) => {
             const doc = pip.document;
             doc.title = '別窓くん';
-            doc.body.style.cssText = 'margin:0;background:#000;overflow:hidden';
-            const frame = doc.createElement('iframe');
-            frame.src = url;
-            frame.allow = 'autoplay; fullscreen';
-            frame.style.cssText = 'display:block;width:100vw;height:100vh;border:0';
-            doc.body.append(frame);
+            doc.body.style.cssText = 'margin:0;background:#000;color:#fff;overflow:hidden';
+            showInPip(pip, url);
+            // 軽量の画面が「公式のスクリプトを止められない」と知らせてきたら（他の拡張が通信ルールを打ち消した等）、
+            // 埋め込みごと外して案内に替える。外さないと、裏で動く公式プレイヤーが視聴の席を取ったまま音声を流す
+            pip.addEventListener('message', (e) => {
+                const frame = doc.querySelector('iframe');
+                if (!frame || e.source !== frame.contentWindow || e.origin !== 'https://live.nicovideo.jp') return;
+                if (e.data && e.data.type === 'betsumado_lite_unavailable') showPipUnavailable(pip, frame.src);
+            });
         })
         .catch(() => {
             // PiP を開けなかった（環境の制限など）。ユーザー操作が残っていれば普通の別窓で開く
             openPopupWindow(url, 'betsumado_single');
         });
+}
+
+// PiP の中に軽量の画面を出す（出ていれば番組を切り替える）
+/**
+ * @param {Window} pip
+ * @param {string} url 軽量の画面の URL
+ */
+function showInPip(pip, url) {
+    const doc = pip.document;
+    let frame = doc.querySelector('iframe');
+    if (!frame) {
+        frame = doc.createElement('iframe');
+        frame.allow = 'autoplay; fullscreen';
+        frame.style.cssText = 'display:block;width:100vw;height:100vh;border:0';
+        doc.body.replaceChildren(frame);
+    }
+    frame.src = url;
+}
+
+// PiP で再生できないときの案内（普通の別窓で公式プレイヤーを開くか、閉じる）
+/**
+ * @param {Window} pip
+ * @param {string} url 軽量の画面の URL
+ */
+function showPipUnavailable(pip, url) {
+    const doc = pip.document;
+    const box = doc.createElement('div');
+    box.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;height:100vh;padding:16px;box-sizing:border-box;text-align:center;font:13px/1.6 system-ui,sans-serif';
+    const text = doc.createElement('div');
+    text.textContent = 'この番組は PiP では再生できません';
+    const row = doc.createElement('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:center;gap:8px';
+    /**
+     * @param {string} label
+     * @param {() => void} onClick
+     */
+    const button = (label, onClick) => {
+        const b = doc.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.style.cssText = 'padding:5px 12px;border:1px solid rgba(255,255,255,.5);border-radius:4px;background:rgba(255,255,255,.1);color:#fff;font:inherit;cursor:pointer';
+        b.addEventListener('click', onClick);
+        return b;
+    };
+    row.append(
+        button('別窓で開く', () => {
+            openPopupWindow(makePopupUrl(url, '1'), 'betsumado_single');
+            pip.close();
+        }),
+        button('閉じる', () => pip.close()),
+    );
+    box.append(text, row);
+    doc.body.replaceChildren(box); // 埋め込みを外す（公式プレイヤーも止まる）
 }
 
 // 別窓を追跡リストに加え、閉じたら外す（シングル・多窓で共通）
@@ -650,7 +729,7 @@ function addActions(anchorElement, containerElement) {
         // 常に手前がオフ: 開く前に既存の別窓を手前へ（従来どおり）。オンのときは開いた後に SW へ頼む
         if (!options.alwaysOnTop) focusOpenedWindows();
 
-        const url = `${liveUrl}?&popup=on&screenmode=${options.screenmode}`;
+        const url = makePopupUrl(liveUrl, options.screenmode);
         let openedPopup = false; // 別窓（ポップアップ）を開いたか。常に手前の前面化はそのときだけ
 
         // シングル（常に同じ名前の窓を再利用。閉じた窓は追跡側が外すので、ここでは足すだけ）
@@ -669,7 +748,7 @@ function addActions(anchorElement, containerElement) {
         }
         // PiP（中身は常に軽量。PiP を開けないページでは普通の別窓（シングル・軽量）で開く）
         if (options.windowmode === '4') {
-            const liteUrl = `${liveUrl}?&popup=on&screenmode=3`;
+            const liteUrl = makePopupUrl(liveUrl, '3');
             if (canOpenPip()) openInPip(liteUrl);
             else openedPopup = openPopupWindow(liteUrl, 'betsumado_single');
         }
@@ -708,6 +787,9 @@ chrome.storage.onChanged.addListener(function (changes) {
         if (options.alwaysOnTop) startAlwaysOnTopMonitoring();
         else stopAlwaysOnTopMonitoring();
     }
+    // 設定ダイアログを開いたままなら表示も合わせる（ほかのタブで変えた値を、古い表示のまま保存し直さないように）
+    const settingsRoot = document.getElementById(SETTINGS_HOST_ID)?.shadowRoot;
+    if (settingsRoot) initializeModalValues(settingsRoot);
 });
 
 // オプションを取得（保存値で既定値を上書きして返す）
@@ -969,8 +1051,9 @@ function addModalEventListeners(root, dialog) {
 async function saveModalOptions(root) {
     options.windowmode = qInput(root, 'input[name="windowmode"]:checked').value;
     options.screenmode = qInput(root, 'input[name="screenmode"]:checked').value;
-    options.window_w = qInput(root, 'input[name="window_w"]').value;
-    options.window_h = qInput(root, 'input[name="window_h"]').value;
+    // サイズは数値にしてから保存する（空・不正な値は前の値のまま。change は blur より先に来るので、ここで直す）
+    options.window_w = convertInt(qInput(root, 'input[name="window_w"]').value, options.window_w);
+    options.window_h = convertInt(qInput(root, 'input[name="window_h"]').value, options.window_h);
     options.alwaysOnTop = qInput(root, 'input[name="alwaysOnTop"]').checked;
     options.liteComments = qInput(root, 'input[name="liteComments"]').checked;
     options.liteQuality = qInput(root, 'input[name="liteQuality"]:checked').value;

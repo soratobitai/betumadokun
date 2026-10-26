@@ -74,6 +74,21 @@ function requestRaise() {
     });
 }
 
+// 1.9.0 で映像モードの既定を「シンプル」から「軽量」に変えた。1.8.x 以前から更新した人で、映像モードを
+// 保存していない（既定のまま使っていた）人は、黙って表示が変わらないよう「シンプル」を保存しておく。
+// 新しく入れた人だけが既定の「軽量」になる
+/** @param {{ reason: string, previousVersion?: string }} details */
+async function keepScreenModeOnUpdate(details) {
+    if (details.reason !== 'update' || !details.previousVersion) return;
+    const [major, minor] = details.previousVersion.split('.').map(Number);
+    if (major > 1 || (major === 1 && minor >= 9)) return;
+    const v = await chrome.storage.local.get('screenmode');
+    if (v.screenmode === undefined) await chrome.storage.local.set({ screenmode: '1' });
+}
+chrome.runtime.onInstalled.addListener((details) => {
+    keepScreenModeOnUpdate(details).catch(() => { });
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;
     if (msg.type === 'RAISE_POPUPS') {

@@ -65,6 +65,11 @@ declare namespace chrome {
                 ) => void | boolean
             ): void;
         };
+
+        /** インストール・更新時（reason: 'install' | 'update' | ...、更新時は previousVersion あり） */
+        const onInstalled: {
+            addListener(callback: (details: { reason: string; previousVersion?: string }) => void): void;
+        };
     }
 
     namespace windows {

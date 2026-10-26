@@ -76,16 +76,20 @@ function createLiteCommentLayer(video, getVideoTime) {
         const vw = video.videoWidth || 16;
         const vh = video.videoHeight || 9;
         const scale = Math.min(cw / vw, ch / vh);
-        W = Math.max(1, Math.round(vw * scale));
-        H = Math.max(1, Math.round(vh * scale));
-        layer.style.left = `${Math.round((cw - W) / 2)}px`;
-        layer.style.top = `${Math.round((ch - H) / 2)}px`;
+        const w = Math.max(1, Math.round(vw * scale));
+        const h = Math.max(1, Math.round(vh * scale));
+        layer.style.left = `${Math.round((cw - w) / 2)}px`;
+        layer.style.top = `${Math.round((ch - h) / 2)}px`;
+        if (w === W && h === H) return; // 画質が変わっただけ（絵の大きさは同じ）なら流れている分はそのまま
+        W = w;
+        H = h;
         layer.style.width = `${W}px`;
         layer.style.height = `${H}px`;
         clearActive(); // 大きさが変わると文字の大きさも変わるので、流れている分は消して次から新しい大きさで出す
     }
     window.addEventListener('resize', layout);
     video.addEventListener('resize', layout); // 画質が変わって映像の縦横が変わったとき
+    video.addEventListener('playing', () => schedule()); // 一時停止から戻ったら、止めていた予定を再開する
     layout();
 
     // ===== 表示 =====
@@ -191,11 +195,12 @@ function createLiteCommentLayer(video, getVideoTime) {
         active.length = 0;
     }
 
-    // 流す時刻が来たコメントを出し、次の予定時刻に起きる（何もない間は止まっている）
+    // 流す時刻が来たコメントを出し、次の予定時刻に起きる（何もない間は止まっている）。
+    // 一時停止中は映像の時刻が進まず、同じ予定で起き続けてしまうので止めておき、再生が戻ったら（playing）再開する
     function schedule() {
         clearTimeout(timer);
         timer = 0;
-        if (!enabled || !queue.length) return;
+        if (!enabled || !queue.length || video.paused) return;
         const vt = getVideoTime();
         let nextDue = Infinity;
         for (let i = 0; i < queue.length;) {
@@ -218,11 +223,19 @@ function createLiteCommentLayer(video, getVideoTime) {
         clearActive();
     }
 
+    let scheduleQueued = false;
     /** @param {LiteComment} c */
     function enqueue(c) {
         queue.push(c);
         if (queue.length > MAX_QUEUE) queue.splice(0, queue.length - MAX_QUEUE);
-        schedule();
+        // まとめて届いたコメント（segment の読み始めなど）は、届き終わってから1回だけ予定を立てる。
+        // 受信は for await で1件ずつマイクロタスクを挟んで届くので、次のタスク（setTimeout）まで待つ
+        if (scheduleQueued) return;
+        scheduleQueued = true;
+        window.setTimeout(() => {
+            scheduleQueued = false;
+            schedule();
+        }, 0);
     }
 
     // ===== 受信（protobuf） =====
@@ -407,6 +420,8 @@ function createLiteCommentLayer(video, getVideoTime) {
                 if (signal.aborted) return;
                 errors++;
                 await sleep(Math.min(30000, 1000 * 2 ** Math.min(errors, 5)));
+                // 失敗のあとは今の時刻から聞き直す（古い位置から聞くと、もう流せない過去の分がまとめて届くため）
+                at = 'now';
                 continue;
             }
             if (next !== null) at = next;

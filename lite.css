@@ -153,7 +153,14 @@ body {
     background: linear-gradient(to top, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0) 100%);
     opacity: 0;
     transition: opacity 0.15s;
-    z-index: 2;
+    z-index: 4; /* 読み込み中・案内の表示より上に（再読み込みボタンをいつでも押せるように） */
+    /* 帯の余白（見えないグラデーション部分）はクリックを通す。小さな窓で案内のボタンを覆わないように */
+    pointer-events: none;
+}
+
+#lite_controls > button,
+#lite_controls > input {
+    pointer-events: auto;
 }
 
 html:hover #lite_controls {
