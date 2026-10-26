@@ -483,6 +483,60 @@ form:not([data-screenmode="3"]) .bm-lite-only {
     background: var(--bm-card-selected);
 }
 
+/* 2択の切り替え（画質） */
+.bm-seg {
+    display: inline-flex;
+    flex-shrink: 0;
+    padding: 2px;
+    border: 1px solid var(--bm-border-strong);
+    border-radius: 9px;
+    background: var(--bm-bg);
+}
+
+.bm-seg label {
+    cursor: pointer;
+}
+
+.bm-seg input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.bm-seg span {
+    display: block;
+    padding: 5px 10px;
+    border-radius: 7px;
+    color: var(--bm-text-2);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background-color 0.12s, color 0.12s;
+}
+
+.bm-seg label:hover span {
+    color: var(--bm-text);
+}
+
+.bm-seg input:checked + span {
+    background: var(--bm-accent);
+    color: var(--bm-on-accent);
+}
+
+.bm-seg input:focus-visible + span {
+    outline: 2px solid var(--bm-accent);
+    outline-offset: 1px;
+}
+
+/* 画質の説明は選んでいる方だけ出す */
+form[data-litequality="site"] .bm-desc-window,
+form:not([data-litequality="site"]) .bm-desc-site {
+    display: none;
+}
+
 /* 常に手前: スイッチ */
 .bm-switch {
     position: relative;

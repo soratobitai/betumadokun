@@ -9,6 +9,7 @@
  * @property {number|string} window_h  別窓の高さ(px)。既定は数値、フォーム入力経由では文字列
  * @property {boolean} alwaysOnTop  別窓を常に手前に表示するか
  * @property {boolean} liteComments  軽量モードで映像の上にコメントを流すか（lite.js が読む）
+ * @property {string} liteQuality  軽量モードの画質 'window'=窓に合わせる / 'site'=ニコ生の設定に合わせる（lite.js が読む）
  */
 
 /** @type {Options} */
@@ -19,6 +20,7 @@ let defaultOptions = {
     window_h: 281,
     alwaysOnTop: false,
     liteComments: false,
+    liteQuality: 'window',
 };
 let options = /** @type {Options} */ ({});
 const linkIconURL = chrome.runtime.getURL('images/link.png');
@@ -692,6 +694,7 @@ chrome.storage.onChanged.addListener(function (changes) {
     if (changes.window_w) options.window_w = changes.window_w.newValue;
     if (changes.window_h) options.window_h = changes.window_h.newValue;
     if (changes.liteComments) options.liteComments = changes.liteComments.newValue;
+    if (changes.liteQuality) options.liteQuality = changes.liteQuality.newValue;
     if (changes.alwaysOnTop) {
         options.alwaysOnTop = changes.alwaysOnTop.newValue;
         // オプションの変更に応じてモニタリングを開始/停止
@@ -787,6 +790,17 @@ function openSettingsModal() {
                         ${settingsChoiceHtml('screenmode', '2', SETTINGS_PICT.full, '多機能', 'コメントなどニコ生の機能が使える')}
                     </div>
                     <div class="bm-rows bm-lite-only">
+                        <div class="bm-row">
+                            <span class="bm-row-text">
+                                <span class="bm-row-label">画質<span class="bm-row-tag">軽量</span></span>
+                                <span class="bm-row-desc bm-desc-window">窓の大きさに見合う画質で再生します（480p以上）</span>
+                                <span class="bm-row-desc bm-desc-site">ニコ生のプレイヤーで選んでいる画質で再生します</span>
+                            </span>
+                            <span class="bm-seg" role="radiogroup" aria-label="画質">
+                                <label><input type="radio" name="liteQuality" value="window"><span>窓に合わせる</span></label>
+                                <label><input type="radio" name="liteQuality" value="site"><span>ニコ生の設定</span></label>
+                            </span>
+                        </div>
                         <label class="bm-row">
                             <span class="bm-row-text">
                                 <span class="bm-row-label">コメントを流す<span class="bm-row-tag">軽量</span></span>
@@ -868,6 +882,12 @@ function initializeModalValues(root) {
         el.checked = el.value === options.screenmode;
     });
 
+    // 画質（軽量）
+    root.querySelectorAll('input[name="liteQuality"]').forEach(input => {
+        const el = /** @type {HTMLInputElement} */ (input);
+        el.checked = el.value === options.liteQuality;
+    });
+
     // 別窓サイズ
     qInput(root, 'input[name="window_w"]').value = String(options.window_w);
     qInput(root, 'input[name="window_h"]').value = String(options.window_h);
@@ -885,6 +905,7 @@ function syncModalState(root) {
     const form = /** @type {HTMLFormElement} */ (root.getElementById('bm_form'));
     form.dataset.windowmode = qInput(form, 'input[name="windowmode"]:checked')?.value || '';
     form.dataset.screenmode = qInput(form, 'input[name="screenmode"]:checked')?.value || '';
+    form.dataset.litequality = qInput(form, 'input[name="liteQuality"]:checked')?.value || '';
 }
 
 // ダイアログのイベントリスナーを追加
@@ -945,6 +966,7 @@ async function saveModalOptions(root) {
     options.window_h = qInput(root, 'input[name="window_h"]').value;
     options.alwaysOnTop = qInput(root, 'input[name="alwaysOnTop"]').checked;
     options.liteComments = qInput(root, 'input[name="liteComments"]').checked;
+    options.liteQuality = qInput(root, 'input[name="liteQuality"]:checked').value;
 
     await chrome.storage.local.set(options);
 }

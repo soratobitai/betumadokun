@@ -35,12 +35,20 @@
     const MAX_RESTARTS = 5;
     const VOLUME_KEY = 'betsumado_lite_volume';
 
+    // 「窓に合わせる」でもこれより下の画質には下げない（480p 相当の長辺）。
+    // ニコ生の低い画質（288p 以下）はビットレートが 0.2〜0.5Mbps と低く、小窓でも粗く見えるため。
+    const MIN_LONG_SIDE = 854;
+    // 公式プレイヤーが「画質」の選択を保存している場所（LeoPlayer / EdgeStreamStore。値は JSON 文字列）
+    const SITE_QUALITY_KEY = 'LeoPlayer_EdgeStreamStore_LATEST_DMC_STREAM_QUALITY';
+
     // 小窓・多窓向けに軽く再生する設定（画質の上限は capLevelToWindow で窓の大きさに合わせる）。
     // ・lowLatencyMode: false: LL-HLS の部分セグメント（0.5秒ごと）を取らず、通常セグメントだけ取る（通信回数を減らす。遅延は数秒増える）
     // ・backBufferLength: 再生済みバッファを溜めない（メモリを抑える）
     // ・withCredentials: CDN の Cookie（署名・dlive_bid）を送る
     // ・enableWorker: false: CSP（script-src 'none'）で Worker は作れない。配信は fMP4 なので変換処理は軽く、Worker は不要
+    // ・autoStartLoad: false: 画質の上限と開始画質を決めてから読み込みを始める（playHls）
     const HLS_CONFIG = {
+        autoStartLoad: false,
         enableWorker: false,
         lowLatencyMode: false,
         backBufferLength: 10,
@@ -72,6 +80,8 @@
     let startTimer = 0;
     let retryTimer = 0;
     let wpxb = ''; // コメント受信に付ける識別情報（公式プレイヤーと同じ形。番組情報から作る）
+    /** @type {'window' | 'site'} 画質: 窓に合わせる / ニコ生の設定に合わせる（設定 liteQuality） */
+    let qualityMode = 'window';
 
     // 画面は公式 HTML の解析が終わってから作る（init）
     /** @type {ReturnType<typeof buildUi>} */
@@ -339,7 +349,7 @@
             sock.send(JSON.stringify({
                 type: 'startWatching',
                 data: {
-                    stream: { quality: 'abr', protocol: 'hls', latency: 'high', accessRightMethod: 'single_cookie', chasePlay: false },
+                    stream: { quality: requestedQuality(), protocol: 'hls', latency: 'high', accessRightMethod: 'single_cookie', chasePlay: false },
                     room: { protocol: 'webSocket', commentable: true },
                     reconnect,
                 },
@@ -492,7 +502,10 @@
         h.on(Hls.Events.MANIFEST_PARSED, () => {
             if (hls !== h) return;
             if (!hasPlayed) showLoading('映像を読み込み中…');
-            capLevelToWindow(); // 最初の画質選択より前に上限を決める
+            // 上限を決め、最初からその画質で読み始める（低い画質から徐々に上がるのを待たない）
+            const cap = capLevelToWindow();
+            if (cap >= 0) h.startLevel = cap;
+            h.startLoad(-1);
             tryPlay();
         });
         h.on(Hls.Events.ERROR, (_event, d) => {
@@ -508,28 +521,45 @@
         h.attachMedia(video);
     }
 
-    // 窓の大きさを超える画質は取らない（既定の 500×281 なら最低画質で済み、多窓時の通信量・デコード負荷が減る）。
-    // hls.js の capLevelToPlayerSize は、映像の割り当てがプレイリスト取得より先だと初回の判定が空振りし、
-    // 窓サイズが変わるまで効かないため、ここで自前で上限を設定する。
+    // 「窓に合わせる」: 窓の大きさに見合う解像度までに上限を設定し、その上限を返す（上限なしは -1）。
+    // ・窓の長辺（画面の拡大率込み）を満たす最小の解像度を目標にし、その解像度以下でいちばんビットレートの
+    //   高い段階まで使う（同じ解像度に複数のビットレートがある配信で、低い方に縛らないため）。
+    // ・ただし MIN_LONG_SIDE（480p 相当）より下には下げない。
+    // ・「ニコ生の設定に合わせる」では、サーバーがその画質だけのプレイリストを返すので上限は付けない。
+    // ※ hls.js の capLevelToPlayerSize は、映像の割り当てがプレイリスト取得より先だと初回の判定が空振りするので使わない。
     function capLevelToWindow() {
         const h = hls;
-        if (!h || h.levels.length < 2) return;
-        // 縦長配信もあるので長辺どうしで比べる（hls.js と同じ考え方）。levels はビットレート昇順
-        const need = Math.max(video.clientWidth, video.clientHeight) * (window.devicePixelRatio || 1);
-        let cap = h.levels.length - 1;
-        for (let i = 0; i < h.levels.length; i++) {
-            if (Math.max(h.levels[i].width, h.levels[i].height) >= need) {
-                cap = i;
-                break;
-            }
+        if (!h || h.levels.length < 2 || qualityMode === 'site') {
+            if (h) h.autoLevelCapping = -1;
+            return -1;
         }
-        h.autoLevelCapping = cap;
+        // 縦長配信もあるので長辺どうしで比べる。levels はビットレート昇順
+        const sides = h.levels.map((l) => Math.max(l.width, l.height));
+        const need = Math.max(Math.max(video.clientWidth, video.clientHeight) * (window.devicePixelRatio || 1), MIN_LONG_SIDE);
+        const target = Math.min(...sides.filter((s) => s >= need)); // 窓より大きい段階がなければ Infinity＝上限なし
+        let cap = -1;
+        sides.forEach((s, i) => {
+            if (s <= target) cap = i;
+        });
+        h.autoLevelCapping = cap === h.levels.length - 1 ? -1 : cap;
+        return cap;
+    }
+
+    // 視聴開始時に要求する画質。「ニコ生の設定に合わせる」では公式プレイヤーで選んでいる画質を送る
+    // （番組にない画質ならサーバーが近い画質に置き換える）。未設定・読めないときは自動（abr）
+    function requestedQuality() {
+        if (qualityMode !== 'site') return 'abr';
+        try {
+            const v = JSON.parse(localStorage.getItem(SITE_QUALITY_KEY) || 'null');
+            if (typeof v === 'string' && /^[0-9a-z_.]+$/i.test(v)) return v;
+        } catch (e) { /* 読めなければ自動 */ }
+        return 'abr';
     }
 
     let resizeTimer = 0;
     window.addEventListener('resize', () => {
         clearTimeout(resizeTimer);
-        resizeTimer = window.setTimeout(capLevelToWindow, 300); // 窓の拡大・全画面で上限を上げ直す
+        resizeTimer = window.setTimeout(() => { capLevelToWindow(); }, 300); // 窓の拡大・全画面で上限を上げ直す
     });
 
     function tryPlay() {
@@ -671,12 +701,26 @@
         comments = createLiteCommentLayer(video, videoTime);
         document.title = (props && props.program && props.program.title) || programId;
         applySavedVolume();
-        start(props);
 
-        // コメントを流すか（設定。既定はオフ）。設定画面で変えたら開いている窓にもすぐ反映する
-        chrome.storage.local.get('liteComments').then((v) => setCommentsEnabled(v.liteComments === true)).catch(() => { });
+        // 設定（画質・コメント）を読んでから視聴を始める。読めなくても既定値で始める
+        chrome.storage.local.get(['liteQuality', 'liteComments'])
+            .then((v) => {
+                qualityMode = v.liteQuality === 'site' ? 'site' : 'window';
+                setCommentsEnabled(v.liteComments === true);
+            })
+            .catch(() => { })
+            .finally(() => start(props));
+
+        // 設定画面で変えたら、開いている窓にもすぐ反映する（画質は視聴し直す）
         chrome.storage.onChanged.addListener((changes) => {
             if (changes.liteComments) setCommentsEnabled(changes.liteComments.newValue === true);
+            if (changes.liteQuality) {
+                const next = changes.liteQuality.newValue === 'site' ? 'site' : 'window';
+                if (next !== qualityMode) {
+                    qualityMode = next;
+                    if (!stopped && !fellBack) restart();
+                }
+            }
         });
     }
 

@@ -20,6 +20,10 @@ declare class Hls {
     readonly levels: { width: number; height: number; bitrate: number }[];
     /** 自動画質選択の上限（levels の添字。-1 で上限なし） */
     autoLevelCapping: number;
+    /** 最初に読む画質（levels の添字。-1 で自動） */
+    startLevel: number;
+    /** autoStartLoad: false のときに読み込みを始める */
+    startLoad(startPosition?: number): void;
     /** 再生位置の時刻（プレイリストの PROGRAM-DATE-TIME 由来。無ければ null） */
     readonly playingDate: Date | null;
     /** ライブの最新位置からの遅れ（秒） */
