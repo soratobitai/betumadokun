@@ -107,13 +107,11 @@ runWhenIdle(async () => {
     // オプションを取得
     options = await getOptions();
 
-    // ページ移動前に開いていた別窓を名前で取り直し、追跡・「常に手前」監視を再確立する
-    reacquirePopups();
-
-    // 「常に手前」有効時は、別窓の有無に関わらず親ページ操作の監視を開始しておく。
+    // 「常に手前」有効時は、別窓の有無に関わらず本ページ操作の監視を開始しておく（別窓の中では開始しない）。
     // 前面化は SW が chrome.windows.getAll で別窓を特定して行うため、本ページが別窓を
-    // 追跡していなくても（例：別番組へ移動した直後）親ページ操作で前面化を依頼できる。
+    // 追跡していなくても（例：別番組へ移動した直後）本ページ操作で前面化を依頼できる。
     if (options.alwaysOnTop) startAlwaysOnTopMonitoring();
+    if (!isInsideOurPopup()) refreshPopupCount();
 
     // Shadow DOM 内にボタンを表示するため、注入用に main.css を先読みしておく
     fetch(chrome.runtime.getURL('main.css')).then(r => r.text()).then(t => { mainCssText = t; }).catch(() => { });
@@ -458,20 +456,45 @@ function isEditableClick(e) {
     return false;
 }
 
+// この文書が別窓くんの別窓（またはその中の同じオリジンの枠）か。
+// main.js は live.nicovideo.jp の全ページ（別窓を含む）で動くため、別窓の中では「常に手前」の監視をしない
+// （別窓の中をクリックするたびに全別窓を前面化すると、クリックした窓の上に他の別窓が来てしまう）。
+// 別オリジンの枠からは判定できないが、その場合も SW 側で依頼元が別窓なら無視している。
+function isInsideOurPopup() {
+    try {
+        return /[?&]popup=on(&|$)/.test(window.top.location.search);
+    } catch (e) {
+        return false;
+    }
+}
+
+// mousedown が別窓くん自身のボタン（別窓・⚙）上か。これらは押した側で前面化を扱う
+// （別窓ボタンは新しい窓ができてから前面化を頼み、⚙ は設定ダイアログを別窓で隠さないよう前面化しない）
+/**
+ * @param {Event} e
+ * @returns {boolean}
+ */
+function isOwnButtonClick(e) {
+    const path = (typeof e.composedPath === 'function') ? e.composedPath() : [];
+    return path.some((n) => n instanceof HTMLElement
+        && (n.classList.contains('nicolive_link_button') || n.classList.contains('nicolive_settings_button')));
+}
+
 function startAlwaysOnTopMonitoring() {
     if (alwaysOnTopEventHandlers.length > 0) return; // 既に開始済み
+    if (isInsideOurPopup()) return;
 
-    // 親ページを操作したら別窓群を前面へ戻す。
+    // 本ページを操作したら別窓群を前面へ戻す。
     // ・監視は mousedown のみ（旧: mousedown/click/focus）。focus 起点の再フォーカスは
-    //   フォーカス争奪・ループ・親ページ操作不能の主因で、gesture 裏付けも弱く focus() が通りにくい。
-    //   mousedown はユーザー操作(gesture)内で同期実行でき focus() が通りやすく、余計な再フォーカスも減る。
-    // ・leading-edge スロットルで連続操作時の focus() storm を防ぐ（同期のまま＝gesture を維持）。
-    // ・入力系要素（コメント欄など）のクリックでは前面化しない。別窓内なら別窓自身がフォーカス窓の
-    //   ままなので前面を保ったまま入力でき、親ページなら入力を奪わず打てる（入力中のみ別窓は一時背面）。
+    //   フォーカス争奪・ループ・本ページ操作不能の主因だった。
+    // ・左ボタンのみ。右クリックメニューや中クリックのスクロールを、前面化によるフォーカス移動で壊さない。
+    // ・leading-edge スロットルで、連続操作時に前面化の依頼が連発しないようにする。
+    // ・入力系要素（コメント欄など）のクリックでは前面化しない（入力を奪わない）。
     /** @param {Event} e */
     const handler = (e) => {
         if (!options.alwaysOnTop) return;
-        if (isEditableClick(e)) return;
+        if (/** @type {MouseEvent} */ (e).button !== 0) return;
+        if (isEditableClick(e) || isOwnButtonClick(e)) return;
         // 設定ダイアログを開いている間は前面化しない（別窓がダイアログに重なって操作しづらくなるため）
         if (document.getElementById(SETTINGS_HOST_ID)) return;
         const now = Date.now();
@@ -491,44 +514,18 @@ function stopAlwaysOnTopMonitoring() {
     alwaysOnTopEventHandlers = [];
 }
 
-// ===== 別窓の永続化 & ページ移動後の再接続 =====
-// 別窓の追跡は本ページ(opener)のメモリに持つため、本ページを別番組へ移動すると失われる
-// （別窓自体は生きているのに手前表示や追跡が切れる）。そこで開いている別窓の「名前」を
-// sessionStorage（同一タブでページ移動をまたいで残る）に保存し、移動後の新ページ起動時に
-// window.open('', name) で参照を取り直して追跡・監視を再確立する。
+// ===== 別窓の追跡 =====
+// 前面化（常に手前）は SW が URL で別窓を見つけて行うので、ここでの追跡は「常に手前」がオフのときの
+// 前面化（別窓ボタンで既存の別窓を手前へ）にだけ使う。
+// ・閉じたかは win.closed を定期的に確かめる。unload は「実際に閉じた」と「再ナビゲーション（シングルの窓の
+//   使い回し・軽量から通常表示への切り替え）」を区別できず、再ナビゲーション後は新しい文書に付け直されないため
+//   使わない。WindowProxy の closed は、窓が別の番組へ移っても正しく保たれる。
+// ・本ページを移動すると追跡は消えるが、名前で取り直す（window.open('', name)）ことはしない。閉じた窓の名前で
+//   呼ぶと空白の窓が開いてしまうため。多窓の位置ずらしは SW に別窓を数えてもらう（refreshPopupCount）。
 
-const SESSION_KEY = 'betsumado_open_windows';
-
-/** @returns {string[]} 開いている別窓の名前一覧 */
-function sessionGetNames() {
-    try {
-        const v = JSON.parse(sessionStorage.getItem(SESSION_KEY) || '[]');
-        return Array.isArray(v) ? v : [];
-    } catch (e) {
-        return [];
-    }
-}
-
-/** @param {string[]} names */
-function sessionSetNames(names) {
-    try {
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(names));
-    } catch (e) { /* プライベートモード等では無視 */ }
-}
-
-/** @param {string} name */
-function sessionAddName(name) {
-    const names = sessionGetNames();
-    if (!names.includes(name)) {
-        names.push(name);
-        sessionSetNames(names);
-    }
-}
-
-/** @param {string} name */
-function sessionRemoveName(name) {
-    sessionSetNames(sessionGetNames().filter(n => n !== name));
-}
+/** SW が数えた、いま開いている別窓の数（多窓で新しい窓を開く位置をずらすのに使う） */
+let popupCount = 0;
+let closedCheckTimer = 0;
 
 // 多窓用の一意な別窓名（sessionStorage 連番でページ移動後も衝突しない）
 /** @returns {string} */
@@ -544,74 +541,34 @@ function makePopupName() {
     return 'betsumado_' + seq;
 }
 
-// ページ移動後、既存の別窓を名前で取り直して追跡・監視を再確立する（常に手前が有効な時のみ）
-function reacquirePopups() {
-    if (!options.alwaysOnTop) return; // この機能は「常に手前」用途。通常多窓は再接続しない
-    const names = sessionGetNames();
-    if (names.length === 0) return;
-
-    /** @type {string[]} */
-    const stillOpen = [];
-    for (const name of names) {
-        /** @type {Window | null} */
-        let win = null;
-        try {
-            win = window.open('', name); // 既存の名前付き窓なら参照を返す（無ければ空白窓を開いてしまう）
-        } catch (e) {
-            win = null;
-        }
-        if (!win) continue;
-
-        let valid = false;
-        try {
-            if (!win.closed && win.location.href.indexOf('nicovideo.jp/watch/') !== -1) valid = true;
-        } catch (e) {
-            valid = false;
-        }
-
-        if (valid) {
-            // 既にクリック経路で追跡済みなら二重追跡しない
-            if (!openedWindows.includes(win)) trackOpenedWindow(win, name);
-            stillOpen.push(name);
-        } else {
-            // 我々の別窓ではない（誤って開いた空白窓など）→ 閉じてリストから除外
-            try {
-                if (!win.closed && win.location.href === 'about:blank') win.close();
-            } catch (e) { /* ignore */ }
-        }
-    }
-    sessionSetNames(stillOpen);
-
-    if (openedWindows.length > 0) startAlwaysOnTopMonitoring();
+// いま開いている別窓の数を SW に数えてもらう（読み込み時と、別窓ボタンにカーソルを載せた時）
+function refreshPopupCount() {
+    try {
+        chrome.runtime.sendMessage({ type: 'COUNT_POPUPS' }, (n) => {
+            void chrome.runtime.lastError;
+            if (typeof n === 'number') popupCount = n;
+        });
+    } catch (e) { /* 拡張コンテキスト無効時は無視 */ }
 }
 
-// 別窓を追跡リストに追加し、フォーカス/クローズ（unload）を監視する
-// シングル・多窓で共通のトラッキング処理
-/**
- * @param {Window} win
- * @param {string} name window.open で付けた別窓名（sessionStorage 上の識別子）
- */
-function trackOpenedWindow(win, name) {
-    openedWindows.push(win);
-
-    win.addEventListener('unload', () => {
-        // unload は「実際に閉じた時」だけでなく「別番組へ再ナビゲートした時（単窓の再利用や
-        // 初回 about:blank→URL）」にも発火する。少し待って win.closed を確認し、本当に閉じた
-        // ときだけ追跡から外す（再ナビゲーションでは閉じていないので維持する）。
-        setTimeout(() => {
+// 別窓を追跡リストに加え、閉じたら外す（シングル・多窓で共通）
+/** @param {Window} win */
+function trackOpenedWindow(win) {
+    if (!openedWindows.includes(win)) openedWindows.push(win);
+    if (closedCheckTimer) return;
+    closedCheckTimer = window.setInterval(() => {
+        openedWindows = openedWindows.filter((w) => {
             try {
-                if (!win.closed) return; // まだ開いている＝再ナビゲーション
+                return !w.closed;
             } catch (e) {
-                return; // 判定不能なら維持
+                return false;
             }
-            openedWindows = openedWindows.filter(win_ => win_ !== win);
-            sessionRemoveName(name); // 永続リストからも削除
-
-            if (openedWindows.length === 0 && options.alwaysOnTop) {
-                stopAlwaysOnTopMonitoring();
-            }
-        }, 200);
-    });
+        });
+        if (openedWindows.length === 0) {
+            clearInterval(closedCheckTimer);
+            closedCheckTimer = 0;
+        }
+    }, 1000);
 }
 
 /**
@@ -625,54 +582,43 @@ function addActions(anchorElement, containerElement) {
     const nicolive_link_button = containerElement.querySelector('.nicolive_link_button');
     const nicolive_settings_button = containerElement.querySelector('.nicolive_settings_button');
 
+    // 開く前に別窓の数を数え直しておく（多窓で新しい窓を開く位置をずらすため）
+    nicolive_link_button.addEventListener('mouseenter', refreshPopupCount);
+
     nicolive_link_button.addEventListener('click', function (e) {
         e.preventDefault();
         e.stopPropagation();
 
-        focusOpenedWindows();
+        // 常に手前がオフ: 開く前に既存の別窓を手前へ（従来どおり）。オンのときは開いた後に SW へ頼む
+        if (!options.alwaysOnTop) focusOpenedWindows();
 
-        // シングル（常に同じ名前の窓を再利用）
+        const url = `${liveUrl}?&popup=on&screenmode=${options.screenmode}`;
+
+        // シングル（常に同じ名前の窓を再利用。閉じた窓は追跡側が外すので、ここでは足すだけ）
         if (options.windowmode === '1') {
-            const name = 'betsumado_single';
-            const win = window.open(`${liveUrl}?&popup=on&screenmode=${options.screenmode}`, name, `width=${options.window_w},height=${options.window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
-
-            // 閉じられたウィンドウを配列から削除
-            openedWindows = openedWindows.filter(w => {
-                try {
-                    return !w.closed;
-                } catch (e) {
-                    return false;
-                }
-            });
-
-            if (win && !openedWindows.includes(win)) {
-                // 初回（または閉じた後）→ 追跡開始
-                sessionAddName(name);
-                trackOpenedWindow(win, name);
-            }
-            // 既存の単窓を再利用する場合は追加処理不要（前面化は SW が担う）
+            const win = window.open(url, 'betsumado_single', `width=${options.window_w},height=${options.window_h},resizable=yes,location=no,toolbar=no,menubar=no`);
+            if (win) trackOpenedWindow(win);
         }
-        // 多窓（毎回新しい名前で開く）
+        // 多窓（毎回新しい名前で開き、開いている別窓の数だけ位置をずらす）
         if (options.windowmode === '2') {
-            const position = openedWindows.length * windowPositionOffset;
-            const name = makePopupName();
-            const win = window.open(`${liveUrl}?&popup=on&screenmode=${options.screenmode}`, name, `width=${options.window_w},height=${options.window_h},top=${position},left=${position},resizable=yes,location=no,toolbar=no,menubar=no`);
-
+            const position = Math.max(popupCount, openedWindows.length) * windowPositionOffset;
+            const win = window.open(url, makePopupName(), `width=${options.window_w},height=${options.window_h},top=${position},left=${position},resizable=yes,location=no,toolbar=no,menubar=no`);
             if (win) {
-                sessionAddName(name);
-                trackOpenedWindow(win, name);
+                trackOpenedWindow(win);
+                popupCount++;
             }
         }
         // タブ
         if (options.windowmode === '3') {
             window.open(`${liveUrl}`);
         }
-        
-        // alwaysOnTopが有効な場合、モニタリングを開始
+
+        // 常に手前: 新しい窓ができてから前面化を頼む（先に頼むと、古い別窓が新しい窓の上に来ることがある）。
+        // SW は古い順に前面化するので、最後に新しい窓が最前面になる
         if (options.alwaysOnTop && options.windowmode !== '3') {
             startAlwaysOnTopMonitoring();
+            setTimeout(focusOpenedWindows, 400);
         }
-
     }, false);
 
     // 設定ボタンのクリックイベント
@@ -697,12 +643,9 @@ chrome.storage.onChanged.addListener(function (changes) {
     if (changes.liteQuality) options.liteQuality = changes.liteQuality.newValue;
     if (changes.alwaysOnTop) {
         options.alwaysOnTop = changes.alwaysOnTop.newValue;
-        // オプションの変更に応じてモニタリングを開始/停止
-        if (options.alwaysOnTop && openedWindows.length > 0) {
-            startAlwaysOnTopMonitoring();
-        } else if (!options.alwaysOnTop) {
-            stopAlwaysOnTopMonitoring();
-        }
+        // オンなら（追跡中の別窓の有無に関わらず）監視を始め、オフなら止める
+        if (options.alwaysOnTop) startAlwaysOnTopMonitoring();
+        else stopAlwaysOnTopMonitoring();
     }
 });
 

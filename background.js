@@ -7,29 +7,45 @@
 
 const POPUP_URL_RE = /^https:\/\/live\.nicovideo\.jp\/watch\/lv\d+/;
 
-// 我々が開いた別窓か判定する（ポップアップ型 ＋ 視聴URL ＋ popup=on マーカー）。
+// 我々が開いた別窓のタブか（視聴URL ＋ popup=on マーカー）。
 // popup=on は content script が別窓を開くときだけ付与するので、手動で開いた視聴ページと区別できる。
+/**
+ * @param {chrome.windows.Tab | undefined} tab
+ * @returns {boolean}
+ */
+function isOurPopupTab(tab) {
+    const url = (tab && (tab.url || tab.pendingUrl)) || '';
+    return POPUP_URL_RE.test(url) && url.indexOf('popup=on') !== -1;
+}
+
+// 我々が開いた別窓か（ポップアップ型 ＋ 別窓のタブ1つ）
 /**
  * @param {chrome.windows.Window} win
  * @returns {boolean}
  */
 function isOurPopup(win) {
-    if (!win || win.type !== 'popup' || !Array.isArray(win.tabs) || win.tabs.length !== 1) return false;
-    const url = win.tabs[0].url || win.tabs[0].pendingUrl || '';
-    return POPUP_URL_RE.test(url) && url.indexOf('popup=on') !== -1;
+    return !!win && win.type === 'popup' && Array.isArray(win.tabs) && win.tabs.length === 1 && isOurPopupTab(win.tabs[0]);
+}
+
+// 別窓を古い順に返す（ポップアップ型のウィンドウだけ取得し、通常ウィンドウのタブまでは読まない）
+/** @returns {Promise<chrome.windows.Window[]>} */
+async function getOurPopups() {
+    const wins = await chrome.windows.getAll({ populate: true, windowTypes: ['popup'] });
+    return wins.filter(isOurPopup).sort((a, b) => a.id - b.id); // id昇順 ≒ 生成順
 }
 
 // 全別窓を古い順→新しい順に前面化する（最後に前面化した最新窓が最前面に来る）。
+// 最小化している別窓は、ユーザーが隠したものなので戻さない。
 async function raisePopups() {
     /** @type {chrome.windows.Window[]} */
-    let wins;
+    let ours;
     try {
-        wins = await chrome.windows.getAll({ populate: true });
+        ours = await getOurPopups();
     } catch (e) {
         return;
     }
-    const ours = wins.filter(isOurPopup).sort((a, b) => a.id - b.id); // id昇順 ≒ 生成順
     for (const w of ours) {
+        if (w.state === 'minimized') continue;
         try {
             await chrome.windows.update(w.id, { focused: true });
         } catch (e) {
@@ -38,6 +54,37 @@ async function raisePopups() {
     }
 }
 
-chrome.runtime.onMessage.addListener((msg) => {
-    if (msg && msg.type === 'RAISE_POPUPS') raisePopups();
+// 前面化は1本ずつ実行する。実行中に依頼が来たら、終わった後にもう1回だけやり直す
+// （並行して走ると互いの focused が入り乱れ、最後に何が手前に来るかが偶然で決まるため）。
+/** @type {Promise<void> | null} */
+let raising = null;
+let raiseAgain = false;
+
+function requestRaise() {
+    if (raising) {
+        raiseAgain = true;
+        return;
+    }
+    raising = raisePopups().finally(() => {
+        raising = null;
+        if (raiseAgain) {
+            raiseAgain = false;
+            requestRaise();
+        }
+    });
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!msg) return;
+    if (msg.type === 'RAISE_POPUPS') {
+        // 別窓の中（中の枠を含む）からの依頼は無視する（クリックした別窓の上に他の別窓が来てしまうため）
+        if (isOurPopupTab(sender.tab)) return;
+        requestRaise();
+        return;
+    }
+    if (msg.type === 'COUNT_POPUPS') {
+        // 多窓で新しい窓を開く位置をずらすため、いま開いている別窓の数を返す
+        getOurPopups().then((ws) => sendResponse(ws.length)).catch(() => sendResponse(null));
+        return true; // 非同期で応答する
+    }
 });

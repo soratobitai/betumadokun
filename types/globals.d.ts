@@ -69,10 +69,12 @@ declare namespace chrome {
             id?: number;
             /** 'normal' | 'popup' など */
             type?: string;
+            /** 'normal' | 'minimized' | 'maximized' | 'fullscreen' */
+            state?: string;
             tabs?: Tab[];
         }
-        /** 全ウィンドウを取得（populate:true でタブ情報も含む） */
-        function getAll(getInfo?: { populate?: boolean }): Promise<Window[]>;
+        /** 全ウィンドウを取得（populate:true でタブ情報も含む。windowTypes で種類を絞る） */
+        function getAll(getInfo?: { populate?: boolean; windowTypes?: string[] }): Promise<Window[]>;
         /** ウィンドウを更新（focused:true で前面化） */
         function update(windowId: number, updateInfo: { focused?: boolean }): Promise<Window>;
     }
